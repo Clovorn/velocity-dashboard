@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -130,19 +131,28 @@ const SK='velocity_hackney_v1';
 let DB={uploads:[],log:[]};
 
 async function boot(){
-  showOv('Loading...');
+  // Always load from localStorage first — instant and reliable
+  try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);DB.uploads=p.uploads||[];DB.log=p.log||[];}}catch{}
+  // Render immediately so the UI is usable right away
+  render();
+  // Then try to sync from server in background (won't block UI if it fails)
   try{
-    const r=await fetch('/api/data');
-    if(r.ok){const d=await r.json();DB.uploads=d.uploads||[];DB.log=d.log||[];}
-    else throw 0;
-  }catch{
-    try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);DB.uploads=p.uploads||[];DB.log=p.log||[];}}catch{}
-  }
-  hideOv();render();
+    const r=await fetch('/api/data',{signal:AbortSignal.timeout(5000)});
+    if(r.ok){
+      const d=await r.json();
+      if(d.uploads&&d.uploads.length>0){
+        DB.uploads=d.uploads;DB.log=d.log||[];
+        try{localStorage.setItem(SK,JSON.stringify(DB));}catch{}
+        render();
+      }
+    }
+  }catch{}
 }
 async function saveRec(rec){
-  try{await fetch('/api/save-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec)});}catch{}
+  // Always save to localStorage immediately
   try{localStorage.setItem(SK,JSON.stringify(DB));}catch{}
+  // Then try server in background
+  try{await fetch('/api/save-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec),signal:AbortSignal.timeout(10000)});}catch{}
 }
 async function delRec(key){
   try{await fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({monthKey:key})});}catch{}
@@ -613,8 +623,11 @@ function ingestFile(file){
       const msg=MO[mo]+' '+yr+' loaded — '+fmtC(rows.length)+' rows'+(ei>=0?' (replaced)':'');
       DB.log.push({msg,ok:true,at:new Date().toLocaleString()});
       if(DB.log.length>60)DB.log=DB.log.slice(-60);
-      showOv('Saving '+MO[mo]+' '+yr+'...');
-      saveRec(rec).then(()=>{hideOv();const ys=getYears();S.yr=+ys[ys.length-1];S.modal=true;render();toast(msg);});
+      // Render immediately — don't wait on server
+      const ys=getYears();S.yr=+ys[ys.length-1];S.modal=true;
+      render();toast(msg);
+      // Save to localStorage and server in background
+      saveRec(rec);
     }catch(e){toast('Error reading '+fn+': '+e.message,'err');}
   };
   reader.readAsBinaryString(file);
