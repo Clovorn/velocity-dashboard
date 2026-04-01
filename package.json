@@ -1,0 +1,8 @@
+{
+  "name": "velocity-dashboard",
+  "version": "1.0.0",
+  "description": "Hackney Distributing Velocity Dashboard",
+  "dependencies": {
+    "@netlify/blobs": "^7.0.0"
+  }
+}

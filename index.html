@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Velocity Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f2f2f0;--bg1:#fff;--bg2:#ebebea;--bg3:#e0e0de;--t1:#1a1a18;--t2:#585853;--t3:#96968f;--bdr:rgba(0,0,0,0.08);--bdr2:rgba(0,0,0,0.15);--blue:#2570c8;--bluebg:#e6f0fb;--bluet:#0c3d7a;--green:#17875a;--greenbg:#e2f4ec;--greent:#0a4f32;--amber:#b85a18;--amberbg:#fdf0e4;--ambert:#6b3309;--redbg:#fce8e8;--redt:#7a1a1a;--purplebg:#f0ecfb;--purplet:#4a2d8a;--r:8px;--rl:12px}
+@media(prefers-color-scheme:dark){:root{--bg:#1a1a18;--bg1:#242422;--bg2:#2c2c2a;--bg3:#343432;--t1:#eeeeea;--t2:#9a9a94;--t3:#5e5e58;--bdr:rgba(255,255,255,0.07);--bdr2:rgba(255,255,255,0.14);--bluebg:#0b2240;--bluet:#7ab0f0;--greenbg:#08200f;--greent:#68c898;--amberbg:#281500;--ambert:#e09050;--redbg:#280808;--redt:#f07070;--purplebg:#1a1030;--purplet:#b090f0}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--t1);font-size:14px;line-height:1.5}
+.wrap{max-width:1300px;margin:0 auto;padding:1.25rem 1rem}
+button,select{font-family:inherit;font-size:13px;border:0.5px solid var(--bdr2);border-radius:var(--r);padding:5px 10px;background:var(--bg1);color:var(--t1);cursor:pointer}
+button:hover,select:hover{background:var(--bg2)}
+input[type=file]{display:none}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px}
+.brand{font-size:18px;font-weight:700;color:var(--t1)}
+.brand-sub{font-size:12px;color:var(--t3);margin-left:6px}
+.tbr{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.btn{font-size:13px;padding:5px 12px;white-space:nowrap;border:0.5px solid var(--bdr2);border-radius:var(--r)}
+.bgreen{border-color:var(--green);color:var(--green);font-weight:600}.bgreen:hover{background:var(--greenbg)}
+.bblue{border-color:var(--blue);color:var(--blue);font-weight:600}.bblue:hover{background:var(--bluebg)}
+.mbar{display:flex;align-items:center;gap:5px;padding:8px 12px;background:var(--bg2);border:0.5px solid var(--bdr);border-radius:var(--r);margin-bottom:.875rem;flex-wrap:wrap}
+.mbar-l{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.mob{font-size:11px;padding:3px 9px;border-radius:20px;border:0.5px solid var(--bdr2);background:var(--bg1);color:var(--t2);cursor:pointer;white-space:nowrap}
+.mob.loaded{background:var(--greenbg);color:var(--greent);border-color:rgba(23,135,90,.3)}
+.mob.active{background:var(--bluebg);color:var(--bluet);border-color:rgba(37,112,200,.4);font-weight:700}
+.mob.ytd{color:var(--bluet);border-color:var(--blue);font-weight:700}.mob.ytd.active{background:var(--bluebg)}
+.mob:disabled{opacity:.35;cursor:default}
+.mob:hover:not(.active):not(:disabled){background:var(--bg3)}
+.mbar-info{font-size:11px;color:var(--t3);margin-left:auto;white-space:nowrap}
+.fbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:8px 12px;background:var(--bg2);border:0.5px solid var(--bdr);border-radius:var(--r);margin-bottom:.875rem}
+.fbar label{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+.fbar select{font-size:12px;padding:4px 8px}
+.fsep{width:1px;height:14px;background:var(--bdr2);margin:0 2px}
+.mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:.875rem}
+.met{background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--r);padding:11px 13px}
+.met-l{font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:4px}
+.met-v{font-size:22px;font-weight:700;color:var(--t1);line-height:1.1}
+.met-s{font-size:11px;margin-top:3px;color:var(--t3)}
+.up{color:var(--greent)}.dn{color:var(--redt)}
+.card{background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--rl);padding:.875rem 1.125rem;margin-bottom:.875rem}
+.chdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:6px}
+.ctitle{font-size:13px;font-weight:700;color:var(--t1)}
+.csub{font-size:11px;color:var(--t3);margin-top:1px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:.875rem;margin-bottom:.875rem}
+@media(max-width:680px){.two{grid-template-columns:1fr}}
+.tabs{display:flex;gap:3px}
+.tab{font-size:11px;padding:3px 10px;border-radius:20px;cursor:pointer;border:0.5px solid transparent;color:var(--t2);background:none}
+.tab.on{background:var(--bluebg);color:var(--bluet);border-color:rgba(37,112,200,.3)}
+.tab:hover:not(.on){background:var(--bg2)}
+.ylbl{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--t2);cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-size:10px;font-weight:700;color:var(--t2);padding:5px 7px;border-bottom:0.5px solid var(--bdr);text-align:left;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+td{padding:8px 7px;border-bottom:0.5px solid var(--bdr);color:var(--t1);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr.dr:hover td{background:var(--bg2);cursor:pointer}
+.arr{color:var(--t3);font-size:16px}
+.bw{display:flex;align-items:center;gap:5px}
+.bb{flex:1;height:4px;background:var(--bg3);border-radius:2px;min-width:36px}
+.bf{height:4px;border-radius:2px}
+.pill{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;white-space:nowrap;display:inline-block}
+.pu{background:var(--greenbg);color:var(--greent)}.pd{background:var(--redbg);color:var(--redt)}.pn{background:var(--bg2);color:var(--t2)}
+.bdg{font-size:10px;padding:2px 7px;border-radius:20px;display:inline-block;white-space:nowrap}
+.wh-b{background:var(--greenbg);color:var(--greent)}
+.vn-b{background:var(--purplebg);color:var(--purplet)}
+.cw{position:relative;width:100%;height:185px}
+.cwl{position:relative;width:100%;height:225px}
+.leg{display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--t2);margin-bottom:5px}
+.leg span{display:flex;align-items:center;gap:3px}
+.lsq{width:9px;height:9px;border-radius:2px;display:inline-block}
+.bc{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--t2);margin-bottom:.75rem}
+.bc a{color:var(--blue);cursor:pointer}.bc a:hover{text-decoration:underline}
+.bc .sep{color:var(--t3)}.bc .cur{color:var(--t2);cursor:default}
+.bbtn{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);border:0.5px solid var(--bdr2);border-radius:var(--r);padding:5px 12px;cursor:pointer;background:var(--bg1);font-weight:600}
+.bbtn:hover{background:var(--bluebg);border-color:var(--blue)}
+.bc{display:flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:12px;color:var(--t2);margin-bottom:.75rem;padding:7px 12px;background:var(--bg1);border:0.5px solid var(--bdr);border-radius:var(--r)}
+.bc-home{color:var(--t3);font-size:15px;cursor:pointer;line-height:1}.bc-home:hover{color:var(--t1)}
+.bc-sep{color:var(--t3);font-size:11px}
+.bc-link{color:var(--blue);cursor:pointer;font-weight:600}.bc-link:hover{text-decoration:underline}
+.bc-cur{color:var(--t1);font-weight:600}
+.dh{display:flex;align-items:flex-start;gap:10px;margin-bottom:.875rem}
+.dhname{font-size:16px;font-weight:700;color:var(--t1)}
+.dhsub{font-size:12px;color:var(--t2);margin-top:2px}
+.modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:200;padding:32px 16px;overflow-y:auto}
+.modal{background:var(--bg1);border:0.5px solid var(--bdr2);border-radius:var(--rl);width:min(680px,100%)}
+.mhdr{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1.25rem;border-bottom:0.5px solid var(--bdr)}
+.mtitle{font-size:14px;font-weight:700;color:var(--t1)}
+.mclose{font-size:22px;cursor:pointer;color:var(--t2);background:none;border:none;padding:0 4px;line-height:1}
+.mbody{padding:1.25rem;max-height:78vh;overflow-y:auto}
+.dz{border:2px dashed var(--bdr2);border-radius:var(--rl);padding:2.5rem;text-align:center;cursor:pointer;transition:background .15s}
+.dz:hover,.dz.over{background:var(--bg2);border-color:var(--blue)}
+.dz strong{font-size:15px;font-weight:600;color:var(--t1)}
+.dz p{font-size:12px;color:var(--t2);margin-top:6px;line-height:1.7}
+.slbl{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin:1.125rem 0 .5rem}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:7px}
+.mcell{border:0.5px solid var(--bdr);border-radius:var(--r);padding:9px 11px}
+.mcell .mm{font-weight:700;font-size:13px;color:var(--t1)}
+.mcell .ms{font-size:10px;color:var(--t3);margin-top:2px}
+.mcell.loaded{background:var(--greenbg);border-color:rgba(23,135,90,.25)}
+.mcell.loaded .mm{color:var(--greent)}
+.mcell.missing{background:var(--bg2);border-style:dashed}
+.mcell.missing .mm{color:var(--t3)}
+.mcdel{float:right;font-size:14px;cursor:pointer;color:var(--redt);opacity:.5;border:none;background:none;padding:0;line-height:1}
+.mcdel:hover{opacity:1}
+.lrow{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:0.5px solid var(--bdr);font-size:12px}
+.lrow:last-child{border-bottom:none}
+.overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;z-index:300}
+.obox{background:var(--bg1);border-radius:var(--rl);padding:1.5rem 2rem;display:flex;align-items:center;gap:12px;font-size:14px;font-weight:600;color:var(--t1);box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.spin{width:20px;height:20px;border:2px solid var(--bdr2);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite;flex-shrink:0}
+@keyframes sp{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--green);color:#fff;padding:10px 18px;border-radius:var(--r);font-size:13px;font-weight:700;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.toast.show{opacity:1}.toast.err{background:var(--redt)}
+.empty{text-align:center;padding:5rem 1rem}
+.empty h2{font-size:20px;font-weight:700;margin-bottom:10px}
+.empty p{font-size:13px;color:var(--t2);max-width:460px;margin:0 auto 8px;line-height:1.7}
+code{font-family:monospace;background:var(--bg2);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="root"></div>
+<div class="toast" id="toast"></div>
+<script>
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SK='velocity_hackney_v1';
+
+// ── Storage (server-first, localStorage fallback) ─────────────────
+let DB={uploads:[],log:[]};
+
+async function boot(){
+  showOv('Loading...');
+  try{
+    const r=await fetch('/api/data');
+    if(r.ok){const d=await r.json();DB.uploads=d.uploads||[];DB.log=d.log||[];}
+    else throw 0;
+  }catch{
+    try{const d=localStorage.getItem(SK);if(d){const p=JSON.parse(d);DB.uploads=p.uploads||[];DB.log=p.log||[];}}catch{}
+  }
+  hideOv();render();
+}
+async function saveRec(rec){
+  try{await fetch('/api/save-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec)});}catch{}
+  try{localStorage.setItem(SK,JSON.stringify(DB));}catch{}
+}
+async function delRec(key){
+  try{await fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({monthKey:key})});}catch{}
+  try{localStorage.setItem(SK,JSON.stringify(DB));}catch{}
+}
+async function delAll(){
+  try{await fetch('/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deleteAll:true})});}catch{}
+  try{localStorage.removeItem(SK);}catch{}
+}
+
+// ── State ─────────────────────────────────────────────────────────
+let S={view:'overview',yr:null,vm:null,modal:false,wh:null,cust:null,cat:null,sku:null,fWH:'All',fVendor:'All',tab:'cases',yoy:true};
+let CH={};
+function dc(id){if(CH[id]){CH[id].destroy();delete CH[id];}}
+function toast(m,t){const el=document.getElementById('toast');el.textContent=m;el.className='toast show'+(t==='err'?' err':'');clearTimeout(el._t);el._t=setTimeout(()=>el.className='toast',3500);}
+function showOv(m){let o=document.getElementById('_ov');if(!o){o=document.createElement('div');o.id='_ov';o.className='overlay';document.body.appendChild(o);}o.innerHTML='<div class="obox"><div class="spin"></div>'+m+'</div>';o.style.display='flex';}
+function hideOv(){const o=document.getElementById('_ov');if(o)o.style.display='none';}
+
+// ── Data ──────────────────────────────────────────────────────────
+function getYears(){return[...new Set(DB.uploads.map(u=>u.year))].sort();}
+function getLM(yr){
+  const m={};
+  DB.uploads.filter(u=>u.year==yr).forEach(u=>{
+    if(!m[u.monthKey])m[u.monthKey]={k:u.monthKey,mo:u.month,yr:u.year,cases:0};
+    m[u.monthKey].cases+=u.rows.reduce((s,r)=>s+(+r.qty||0),0);
+  });
+  return Object.values(m).sort((a,b)=>a.k.localeCompare(b.k));
+}
+function getRows(yr){
+  let ups=DB.uploads.filter(u=>u.year==yr);
+  if(S.vm)ups=ups.filter(u=>u.monthKey===S.vm);
+  const rows=[];
+  ups.forEach(u=>u.rows.forEach(r=>rows.push({...r,_mo:u.month,_yr:u.year})));
+  return rows;
+}
+function filt(rows){
+  return rows.filter(r=>{
+    if(S.fWH!=='All'&&String(r.whs)!==S.fWH)return false;
+    if(S.fVendor!=='All'&&String(r.vendor)!==S.fVendor)return false;
+    return true;
+  });
+}
+const sa=a=>a.reduce((s,v)=>s+(+v||0),0);
+function fmtM(n){if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(0)+'K';return'$'+n.toFixed(2);}
+function fmtC(n){return Math.round(n).toLocaleString();}
+function yp(c,p){return p>0?Math.round((c-p)/p*100):null;}
+function pill(v){if(v===null)return'<span class="pill pn">—</span>';return'<span class="pill '+(v>0?'pu':v<0?'pd':'pn')+'">'+(v>0?'+':'')+v+'%</span>';}
+function rollup(rows,kfn){
+  const m={};
+  rows.forEach(r=>{
+    const k=kfn(r);
+    if(!m[k])m[k]={key:k,cases:0,rev:0,cs:new Set(),ss:new Set(),mo:new Array(12).fill(0)};
+    m[k].cases+=+r.qty||0;m[k].rev+=+r.sales||0;
+    m[k].cs.add(r.custName);m[k].ss.add(r.itemno);
+    m[k].mo[r._mo]+=+r.qty||0;
+  });
+  return Object.values(m).map(x=>({...x,custs:x.cs.size,skus:x.ss.size})).sort((a,b)=>b.cases-a.cases);
+}
+function moV(rows,mo,field){return sa(rows.filter(r=>r._mo===mo).map(r=>+r[field]||0));}
+
+// ── Router ────────────────────────────────────────────────────────
+function go(v,ex){S.view=v;if(ex)Object.assign(S,ex);render();}
+function bcH(crumbs){
+  const parts=crumbs.map((c,i)=>{
+    if(i===crumbs.length-1)return`<span class="bc-cur">${c.label}</span>`;
+    return`<span class="bc-link" data-bc="${i}">${c.label}</span>`;
+  });
+  return`<div class="bc"><span class="bc-home" data-bc="-1" title="Overview">⌂</span><span class="bc-sep">›</span>${parts.join('<span class="bc-sep">›</span>')}</div>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────
+function render(){
+  const ys=getYears();
+  if(!S.yr||!ys.includes(+S.yr))S.yr=ys.length?+ys[ys.length-1]:null;
+  if(S.vm&&!getLM(S.yr||0).find(m=>m.k===S.vm))S.vm=null;
+  const root=document.getElementById('root');
+  if(!S.yr){root.innerHTML=renderEmpty();if(S.modal)root.insertAdjacentHTML('beforeend',renderModal());bindAll();return;}
+  const views={overview:renderOverview,wh:renderWH,cust:renderCust,cat:renderCat,skuAccts:renderSKUAccts};
+  root.innerHTML=(views[S.view]||renderOverview)();
+  if(S.modal)root.insertAdjacentHTML('beforeend',renderModal());
+  bindAll();renderCharts();
+}
+
+// ── Shared HTML ───────────────────────────────────────────────────
+function tbH(){
+  const ys=getYears();
+  return`<div class="topbar"><div><span class="brand">Velocity Dashboard</span><span class="brand-sub">Hackney Distributing</span></div>
+  <div class="tbr">${ys.length>1?`<select id="yr-sel">${ys.map(y=>`<option${y==S.yr?' selected':''}>${y}</option>`).join('')}</select>`:''}<button class="btn bgreen" id="exp-btn">↓ Excel</button><button class="btn bblue" id="open-modal">+ Upload</button></div></div>`;
+}
+function mbH(){
+  if(!S.yr)return'';
+  const lm=getLM(S.yr);const lk=new Set(lm.map(m=>m.k));
+  return`<div class="mbar"><span class="mbar-l">Period:</span>
+  <button class="mob ytd${!S.vm?' active':''}" data-mo="ytd">YTD</button>
+  ${MO.map((m,i)=>{const k=S.yr+'-'+String(i+1).padStart(2,'0');const ld=lk.has(k);return`<button class="mob${ld?' loaded':''}${S.vm===k?' active':''}" data-mo="${ld?k:''}" ${ld?'':'disabled'} title="${ld?fmtC(lm.find(x=>x.k===k)?.cases||0)+' cases':'Not uploaded'}">${m}</button>`;}).join('')}
+  <span class="mbar-info">${lm.length}/12 loaded · ${S.vm?'Single month':'YTD'}</span></div>`;
+}
+function fbH(rows){
+  const whs=[...new Set(rows.map(r=>String(r.whs)))].sort();
+  const vs=[...new Set(rows.map(r=>String(r.vendor)))].sort();
+  return`<div class="fbar"><label>Warehouse</label><select id="f-wh"><option>All</option>${whs.map(w=>`<option${w===S.fWH?' selected':''}>${w}</option>`).join('')}</select>
+  <div class="fsep"></div><label>Vendor</label><select id="f-vendor"><option>All</option>${vs.map(v=>`<option${v===S.fVendor?' selected':''}>${v}</option>`).join('')}</select></div>`;
+}
+function ccH(){
+  return`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="ylbl"><input type="checkbox" id="yoy-chk" ${S.yoy?'checked':''}> YOY</label>
+  <div class="tabs"><button class="tab${S.tab==='cases'?' on':''}" data-tab="cases">Cases</button><button class="tab${S.tab==='rev'?' on':''}" data-tab="rev">Revenue</button><button class="tab${S.tab==='both'?' on':''}" data-tab="both">Both</button></div></div>`;
+}
+function metsH(rows,pri,prYr){
+  const c=sa(rows.map(r=>+r.qty||0)),rv=sa(rows.map(r=>+r.sales||0));
+  const pc=sa(pri.map(r=>+r.qty||0)),prv=sa(pri.map(r=>+r.sales||0));
+  const avg=c>0?rv/c:0,pavg=pc>0?prv/pc:0;
+  const lm=getLM(S.yr).length;
+  return`<div class="mets">
+  <div class="met"><div class="met-l">Total Cases</div><div class="met-v">${fmtC(c)}</div><div class="met-s ${yp(c,pc)!==null&&yp(c,pc)>=0?'up':'dn'}">${prYr?(yp(c,pc)>=0?'▲':'▼')+' '+Math.abs(yp(c,pc))+'% vs '+prYr:S.vm?MO[+S.vm.split('-')[1]-1]+' '+S.vm.split('-')[0]:''}</div></div>
+  <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(rv)}</div><div class="met-s ${yp(rv,prv)!==null&&yp(rv,prv)>=0?'up':'dn'}">${prYr?(yp(rv,prv)>=0?'▲':'▼')+' '+Math.abs(yp(rv,prv))+'% vs '+prYr:''}</div></div>
+  <div class="met"><div class="met-l">Avg $/Case</div><div class="met-v">${avg>0?'$'+avg.toFixed(2):'—'}</div><div class="met-s ${yp(avg,pavg)!==null&&yp(avg,pavg)>=0?'up':'dn'}">${prYr&&pavg>0?(yp(avg,pavg)>=0?'▲':'▼')+' '+Math.abs(yp(avg,pavg))+'% mix':''}</div></div>
+  <div class="met"><div class="met-l">Active Accounts</div><div class="met-v">${fmtC(new Set(rows.map(r=>r.custName)).size)}</div><div class="met-s">${new Set(rows.map(r=>r.city)).size} cities</div></div>
+  <div class="met"><div class="met-l">Active SKUs</div><div class="met-v">${new Set(rows.map(r=>r.itemno)).size}</div><div class="met-s">${lm}/12 months loaded</div></div>
+  </div>`;
+}
+
+// ── Overview ──────────────────────────────────────────────────────
+function renderOverview(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all);const pri=prYr?filt(getRows(prYr)):[];
+  const whs=rollup(cur,r=>String(r.whs));const pWhs=rollup(pri,r=>String(r.whs));
+  const vns=rollup(cur,r=>String(r.vendor));const pVns=rollup(pri,r=>String(r.vendor));
+  const mxW=whs.length?whs[0].cases:1,mxV=vns.length?vns[0].cases:1;
+  return tbH()+mbH()+fbH(all)+metsH(cur,pri,prYr)+
+  `<div class="card"><div class="chdr"><span class="ctitle">Monthly Trend — ${S.yr}${S.vm?' ('+MO[+S.vm.split('-')[1]-1]+')':''}</span>${ccH()}</div><div class="leg" id="leg-ov"></div><div class="cwl"><canvas id="ch-ov"></canvas></div></div>
+  <div class="two">
+  <div class="card"><div class="chdr"><div><div class="ctitle">Warehouse Performance</div><div class="csub">Click to drill into customers →</div></div></div>
+  <table><thead><tr><th>Warehouse</th><th>Cases</th><th>Revenue</th><th>Accounts</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${whs.map(w=>{const pw=pWhs.find(x=>x.key===w.key);const pct=Math.round(w.cases/mxW*100);
+  return`<tr class="dr" data-go-wh="${w.key}"><td><span class="bdg wh-b">WH ${w.key}</span></td>
+  <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#2570c8"></div></div><span style="font-size:12px">${fmtC(w.cases)}</span></div></td>
+  <td style="font-size:12px">${fmtM(w.rev)}</td><td style="font-size:12px">${w.custs}</td>
+  <td>${pill(pw?yp(w.cases,pw.cases):null)}</td><td class="arr">›</td></tr>`;}).join('')}
+  </tbody></table></div>
+  <div class="card"><div class="chdr"><div><div class="ctitle">Vendor Performance</div><div class="csub">Click to drill into products →</div></div></div>
+  <table><thead><tr><th>Vendor</th><th>Cases</th><th>Revenue</th><th>SKUs</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${vns.map(v=>{const pv=pVns.find(x=>x.key===v.key);const pct=Math.round(v.cases/mxV*100);
+  return`<tr class="dr" data-go-cat="${v.key}"><td><span class="bdg vn-b">${v.key}</span></td>
+  <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#17875a"></div></div><span style="font-size:12px">${fmtC(v.cases)}</span></div></td>
+  <td style="font-size:12px">${fmtM(v.rev)}</td><td style="font-size:12px">${v.skus}</td>
+  <td>${pill(pv?yp(v.cases,pv.cases):null)}</td><td class="arr">›</td></tr>`;}).join('')}
+  </tbody></table></div></div>`;
+}
+
+// ── Warehouse drill ───────────────────────────────────────────────
+function renderWH(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all).filter(r=>String(r.whs)===S.wh);
+  const pri=prYr?filt(getRows(prYr)).filter(r=>String(r.whs)===S.wh):[];
+  const custs=rollup(cur,r=>r.custName);const pCusts=rollup(pri,r=>r.custName);
+  const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
+  const pTotC=sa(pri.map(r=>+r.qty||0));
+  const mx=custs.length?custs[0].cases:1;
+  const lm=getLM(S.yr).length||1;
+  return tbH()+mbH()+fbH(all)+
+  bcH([{label:`Warehouse ${S.wh}`}])+
+  `<div class="dh"><button class="bbtn" data-nav="overview">← Overview</button><div><div class="dhname">Warehouse ${S.wh}</div><div class="dhsub">${custs.length} accounts · ${fmtC(totC)} cases · ${fmtM(totR)}</div></div></div>
+  <div class="mets"><div class="met"><div class="met-l">Cases</div><div class="met-v">${fmtC(totC)}</div><div class="met-s ${yp(totC,pTotC)>=0?'up':'dn'}">${prYr?(yp(totC,pTotC)>=0?'▲':'▼')+' '+Math.abs(yp(totC,pTotC))+'% YOY':''}</div></div>
+  <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(totR)}</div></div>
+  <div class="met"><div class="met-l">Avg $/Case</div><div class="met-v">${totC>0?'$'+(totR/totC).toFixed(2):'—'}</div></div>
+  <div class="met"><div class="met-l">Accounts</div><div class="met-v">${custs.length}</div></div>
+  <div class="met"><div class="met-l">SKUs</div><div class="met-v">${new Set(cur.map(r=>r.itemno)).size}</div></div></div>
+  <div class="card"><div class="chdr"><span class="ctitle">Monthly Trend — Warehouse ${S.wh}</span>${ccH()}</div><div class="leg" id="leg-wh"></div><div class="cwl"><canvas id="ch-wh"></canvas></div></div>
+  <div class="card"><div class="chdr"><div><div class="ctitle">Accounts in Warehouse ${S.wh}</div><div class="csub">Click to drill into account detail →</div></div></div>
+  <table><thead><tr><th>Account</th><th>Group</th><th>City</th><th>St</th><th>Cases</th><th>Revenue</th><th>Avg/Mo</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${custs.map(c=>{
+    const pc=pCusts.find(x=>x.key===c.key);const pct=Math.round(c.cases/mx*100);
+    const ref=cur.find(r=>r.custName===c.key)||{};
+    return`<tr class="dr" data-go-cust="${encodeURIComponent(c.key)}">
+    <td style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.key}">${c.key}</td>
+    <td style="font-size:11px;color:var(--t2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ref.groupName||''}</td>
+    <td style="font-size:12px">${ref.city||''}</td><td style="font-size:12px">${ref.st||''}</td>
+    <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#2570c8"></div></div>${fmtC(c.cases)}</div></td>
+    <td style="font-size:12px">${fmtM(c.rev)}</td><td style="font-size:12px">${Math.round(c.cases/lm)}</td>
+    <td>${pill(pc?yp(c.cases,pc.cases):null)}</td><td class="arr">›</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+// ── Customer drill ────────────────────────────────────────────────
+function renderCust(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const name=decodeURIComponent(S.cust);
+  const all=getRows(S.yr);const cur=filt(all).filter(r=>r.custName===name);
+  const pri=prYr?filt(getRows(prYr)).filter(r=>r.custName===name):[];
+  if(!cur.length)return renderOverview();
+  const ref=cur[0];
+  const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
+  const pTotC=sa(pri.map(r=>+r.qty||0)),pTotR=sa(pri.map(r=>+r.sales||0));
+  const skus=rollup(cur,r=>r.itemno+'§'+r.description.trim());
+  const pSkus=rollup(pri,r=>r.itemno+'§'+r.description.trim());
+  const mx=skus.length?skus[0].cases:1;
+  const lm=getLM(S.yr).length||1;
+  const moc=MO.map((_,m)=>moV(cur,m,'qty'));
+  const peak=moc.indexOf(Math.max(...moc));
+  return tbH()+mbH()+fbH(all)+
+  bcH([{label:`WH ${ref.whs}`,nav:'wh'},{label:name}])+
+  `<div class="dh"><button class="bbtn" data-go-wh="${ref.whs}">← Warehouse ${ref.whs}</button><div><div class="dhname">${name}</div><div class="dhsub">${ref.groupName||''} · ${ref.city}, ${ref.st} · WH ${ref.whs} · #${ref.custNo||''}</div></div></div>
+  <div class="mets">
+  <div class="met"><div class="met-l">Total Cases</div><div class="met-v">${fmtC(totC)}</div><div class="met-s ${yp(totC,pTotC)>=0?'up':'dn'}">${prYr?(yp(totC,pTotC)>=0?'▲':'▼')+' '+Math.abs(yp(totC,pTotC))+'% YOY':''}</div></div>
+  <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(totR)}</div><div class="met-s ${yp(totR,pTotR)>=0?'up':'dn'}">${prYr?(yp(totR,pTotR)>=0?'▲':'▼')+' '+Math.abs(yp(totR,pTotR))+'% YOY':''}</div></div>
+  <div class="met"><div class="met-l">Avg/Mo</div><div class="met-v">${Math.round(totC/lm)}</div></div>
+  <div class="met"><div class="met-l">SKUs Active</div><div class="met-v">${skus.length}</div></div>
+  <div class="met"><div class="met-l">Peak Month</div><div class="met-v">${moc.some(v=>v>0)?MO[peak]:'—'}</div></div>
+  </div>
+  <div class="card"><div class="chdr"><span class="ctitle">Monthly Velocity — ${name}</span>${ccH()}</div><div class="leg" id="leg-cust"></div><div class="cwl"><canvas id="ch-cust"></canvas></div></div>
+  <div class="card"><div class="chdr"><div><div class="ctitle">Products Purchased</div><div class="csub">Click a product to see all accounts that carry it →</div></div></div>
+  <table><thead><tr><th>Item #</th><th>Description</th><th>Pack</th><th>Size</th><th>Cases</th><th>Cost/Case</th><th>Revenue</th><th>Avg/Mo</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${skus.map(sk=>{
+    const[ino,desc]=sk.key.split('§');const ps=pSkus.find(x=>x.key===sk.key);
+    const pct=Math.round(sk.cases/mx*100);const sr=cur.find(r=>r.itemno==ino)||{};
+    const costPerCase=sk.cases>0?(sk.rev/sk.cases):0;
+    return`<tr class="dr" data-go-sku="${ino}">
+    <td style="font-size:11px;color:var(--t2)">${ino}</td>
+    <td style="font-weight:600">${desc}</td>
+    <td style="font-size:12px">${sr.pack||''}</td>
+    <td style="font-size:12px">${(sr.size||'').trim()}</td>
+    <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#2570c8"></div></div>${fmtC(sk.cases)}</div></td>
+    <td style="font-size:12px;text-align:right;font-weight:500">$${costPerCase.toFixed(2)}</td>
+    <td style="font-size:12px">${fmtM(sk.rev)}</td>
+    <td style="font-size:12px">${Math.round(sk.cases/lm)}</td>
+    <td>${pill(ps?yp(sk.cases,ps.cases):null)}</td><td class="arr">›</td></tr>`;
+  }).join('')}</tbody></table></div>
+  <div class="card"><div class="chdr"><span class="ctitle">Month-by-Month Detail</span></div>
+  <table><thead><tr><th>Month</th><th>Cases</th>${prYr?`<th>Prior Yr</th><th>YOY</th>`:''}<th>Cost/Case</th><th>Total Cost</th><th>Revenue</th><th>vs Avg</th></tr></thead><tbody>
+  ${MO.map((m,i)=>{
+    const cs=moV(cur,i,'qty'),rv=moV(cur,i,'sales'),pcs=moV(pri,i,'qty');
+    const costPerCase=cs>0?(rv/cs):0;const totalCost=cs*costPerCase;
+    const avg=Math.round(totC/lm),diff=cs-avg;
+    if(!cs&&!rv)return`<tr><td style="color:var(--t3)">${m}</td><td colspan="6" style="color:var(--t3);font-size:11px">— not yet loaded</td></tr>`;
+    return`<tr><td style="font-weight:500">${m}</td><td style="font-weight:500">${cs}</td>${prYr?`<td>${pcs||''}</td><td>${pill(pcs?yp(cs,pcs):null)}</td>`:''}<td style="text-align:right;font-size:12px">$${costPerCase.toFixed(2)}</td><td style="text-align:right;font-size:12px">$${totalCost.toFixed(2)}</td><td style="font-weight:500">${rv?fmtM(rv):''}</td><td>${cs?`<span class="pill ${diff>0?'pu':diff<0?'pd':'pn'}">${diff>0?'+':''}${diff}</span>`:''}</td></tr>`;
+  }).join('')}
+  <tr style="background:var(--bg2)"><td style="font-weight:600;padding:8px 7px;border-top:0.5px solid var(--bdr2)">Total</td><td style="font-weight:600;padding:8px 7px;border-top:0.5px solid var(--bdr2)">${totC}</td>${prYr?`<td style="padding:8px 7px;border-top:0.5px solid var(--bdr2)"></td><td style="padding:8px 7px;border-top:0.5px solid var(--bdr2)"></td>`:''}<td style="padding:8px 7px;border-top:0.5px solid var(--bdr2)">—</td><td style="font-weight:600;padding:8px 7px;border-top:0.5px solid var(--bdr2);text-align:right">$${totR.toFixed(2)}</td><td style="font-weight:600;padding:8px 7px;border-top:0.5px solid var(--bdr2)">${fmtM(totR)}</td><td style="padding:8px 7px;border-top:0.5px solid var(--bdr2)"></td></tr>
+  </tbody></table></div>`;
+}
+
+// ── Vendor drill ──────────────────────────────────────────────────
+function renderCat(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all).filter(r=>String(r.vendor)===S.cat);
+  const pri=prYr?filt(getRows(prYr)).filter(r=>String(r.vendor)===S.cat):[];
+  const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
+  const pTotC=sa(pri.map(r=>+r.qty||0));
+  const skus=rollup(cur,r=>r.itemno+'§'+r.description.trim());
+  const pSkus=rollup(pri,r=>r.itemno+'§'+r.description.trim());
+  const mx=skus.length?skus[0].cases:1;
+  const lm=getLM(S.yr).length||1;
+  return tbH()+mbH()+fbH(all)+
+  bcH([{label:`Vendor ${S.cat}`}])+
+  `<div class="dh"><button class="bbtn" data-nav="overview">← Overview</button><div><div class="dhname">Vendor ${S.cat}</div><div class="dhsub">${skus.length} SKUs · ${fmtC(totC)} cases · ${fmtM(totR)}</div></div></div>
+  <div class="mets">
+  <div class="met"><div class="met-l">Total Cases</div><div class="met-v">${fmtC(totC)}</div><div class="met-s ${yp(totC,pTotC)>=0?'up':'dn'}">${prYr?(yp(totC,pTotC)>=0?'▲':'▼')+' '+Math.abs(yp(totC,pTotC))+'% YOY':''}</div></div>
+  <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(totR)}</div></div>
+  <div class="met"><div class="met-l">SKUs</div><div class="met-v">${skus.length}</div></div>
+  <div class="met"><div class="met-l">Accounts</div><div class="met-v">${new Set(cur.map(r=>r.custName)).size}</div></div>
+  </div>
+  <div class="card"><div class="chdr"><span class="ctitle">Monthly Trend — Vendor ${S.cat}</span>${ccH()}</div><div class="leg" id="leg-cat"></div><div class="cwl"><canvas id="ch-cat"></canvas></div></div>
+  <div class="card"><div class="chdr"><div><div class="ctitle">Products — Vendor ${S.cat}</div><div class="csub">Click a product to see all accounts carrying it →</div></div></div>
+  <table><thead><tr><th>Item #</th><th>Description</th><th>Pack</th><th>Size</th><th>Cases</th><th>Revenue</th><th>Avg/Mo</th><th>Accounts</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${skus.map(sk=>{
+    const[ino,desc]=sk.key.split('§');const ps=pSkus.find(x=>x.key===sk.key);
+    const pct=Math.round(sk.cases/mx*100);const sr=cur.find(r=>r.itemno==ino)||{};
+    return`<tr class="dr" data-go-sku-cat="${ino}">
+    <td style="font-size:11px;color:var(--t2)">${ino}</td>
+    <td style="font-weight:600">${desc}</td>
+    <td style="font-size:12px">${sr.pack||''}</td>
+    <td style="font-size:12px">${(sr.size||'').trim()}</td>
+    <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#17875a"></div></div>${fmtC(sk.cases)}</div></td>
+    <td style="font-size:12px">${fmtM(sk.rev)}</td>
+    <td style="font-size:12px">${Math.round(sk.cases/lm)}</td>
+    <td style="font-size:12px">${sk.custs}</td>
+    <td>${pill(ps?yp(sk.cases,ps.cases):null)}</td><td class="arr">›</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+// ── SKU across accounts ───────────────────────────────────────────
+function renderSKUAccts(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all).filter(r=>String(r.itemno)===String(S.sku));
+  const pri=prYr?filt(getRows(prYr)).filter(r=>String(r.itemno)===String(S.sku)):[];
+  if(!cur.length)return renderOverview();
+  const ref=cur[0];
+  const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
+  const pTotC=sa(pri.map(r=>+r.qty||0));
+  const accts=rollup(cur,r=>r.custName);const pAccts=rollup(pri,r=>r.custName);
+  const mx=accts.length?accts[0].cases:1;
+  const lm=getLM(S.yr).length||1;
+  const backNav=S.cat?'cat':'cust';
+  const bcCrumbs=S.cat?[{label:`Vendor ${S.cat}`,nav:'cat'},{label:ref.description.trim()}]:S.cust?[{label:`WH ${S.wh}`,nav:'wh'},{label:decodeURIComponent(S.cust),nav:'cust'},{label:ref.description.trim()}]:[{label:ref.description.trim()}];
+  const backLabel=S.cat?`← Vendor ${S.cat}`:S.cust?`← ${decodeURIComponent(S.cust)}`:'← Back';
+  const backAttr=S.cat?`data-go-cat="${S.cat}"`:S.cust?`data-go-cust="${S.cust}"`:''
+  return tbH()+mbH()+fbH(all)+
+  bcH(bcCrumbs)+
+  `<div class="dh"><button class="bbtn" ${backAttr}>${backLabel}</button>
+  <div><div class="dhname">${ref.description.trim()}</div><div class="dhsub">Item ${ref.itemno} · Pack ${ref.pack} · ${(ref.size||'').trim()} · Vendor ${ref.vendor} · ${accts.length} accounts</div></div></div>
+  <div class="mets">
+  <div class="met"><div class="met-l">Total Cases</div><div class="met-v">${fmtC(totC)}</div><div class="met-s ${yp(totC,pTotC)>=0?'up':'dn'}">${prYr?(yp(totC,pTotC)>=0?'▲':'▼')+' '+Math.abs(yp(totC,pTotC))+'% YOY':''}</div></div>
+  <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(totR)}</div></div>
+  <div class="met"><div class="met-l">Selling Accounts</div><div class="met-v">${accts.length}</div></div>
+  <div class="met"><div class="met-l">Avg Cases/Acct/Mo</div><div class="met-v">${accts.length?Math.round(totC/accts.length/lm):0}</div></div>
+  </div>
+  <div class="card"><div class="chdr"><span class="ctitle">Monthly Volume — ${ref.description.trim()}</span>${ccH()}</div><div class="leg" id="leg-sku"></div><div class="cwl"><canvas id="ch-sku"></canvas></div></div>
+  <div class="card"><div class="chdr"><div><div class="ctitle">All Accounts Carrying This Product</div><div class="csub">Click account to view full account detail →</div></div></div>
+  <table><thead><tr><th>Account</th><th>WH</th><th>City</th><th>St</th><th>Cases</th><th>Revenue</th><th>Avg/Mo</th><th>YOY</th><th></th></tr></thead><tbody>
+  ${accts.map(a=>{
+    const pa=pAccts.find(x=>x.key===a.key);const pct=Math.round(a.cases/mx*100);
+    const ar=cur.find(r=>r.custName===a.key)||{};
+    return`<tr class="dr" data-go-cust="${encodeURIComponent(a.key)}">
+    <td style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.key}">${a.key}</td>
+    <td><span class="bdg wh-b">WH ${ar.whs||''}</span></td>
+    <td style="font-size:12px">${ar.city||''}</td><td style="font-size:12px">${ar.st||''}</td>
+    <td><div class="bw"><div class="bb"><div class="bf" style="width:${pct}%;background:#2570c8"></div></div>${fmtC(a.cases)}</div></td>
+    <td style="font-size:12px">${fmtM(a.rev)}</td>
+    <td style="font-size:12px">${Math.round(a.cases/lm)}</td>
+    <td>${pill(pa?yp(a.cases,pa.cases):null)}</td><td class="arr">›</td></tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+// ── Charts ────────────────────────────────────────────────────────
+function buildChart(cid,lid,cur,pri,prLbl){
+  const el=document.getElementById(cid);if(!el)return;
+  const mC=MO.map((_,m)=>moV(cur,m,'qty'));
+  const mR=MO.map((_,m)=>moV(cur,m,'sales'));
+  const pC=pri?MO.map((_,m)=>moV(pri,m,'qty')):null;
+  const pR=pri?MO.map((_,m)=>moV(pri,m,'sales')):null;
+  const ds=[];
+  if(S.tab==='cases'||S.tab==='both'){
+    ds.push({label:`Cases ${S.yr}`,data:mC,backgroundColor:'rgba(37,112,200,0.72)',borderColor:'#164f8a',borderWidth:1,type:'bar',yAxisID:'y'});
+    if(pC&&S.yoy)ds.push({label:`Cases ${prLbl}`,data:pC,borderColor:'#b85a18',borderWidth:2,borderDash:[4,3],pointRadius:3,type:'line',tension:0.4,fill:false,yAxisID:'y'});
+  }
+  if(S.tab==='rev'||S.tab==='both'){
+    const ya=S.tab==='both'?'y2':'y';
+    ds.push({label:`Revenue ${S.yr}`,data:mR,borderColor:'#17875a',backgroundColor:'rgba(23,135,90,0.10)',borderWidth:2,fill:true,tension:0.4,pointRadius:3,type:'line',yAxisID:ya});
+    if(pR&&S.yoy)ds.push({label:`Revenue ${prLbl}`,data:pR,borderColor:'#6b3309',borderWidth:1.5,borderDash:[4,3],pointRadius:2,type:'line',tension:0.4,fill:false,yAxisID:ya});
+  }
+  const leg=document.getElementById(lid);
+  if(leg)leg.innerHTML=ds.map(d=>`<span><span class="lsq" style="background:${d.backgroundColor&&!d.backgroundColor.startsWith('rgba(23')?d.backgroundColor:d.borderColor}"></span>${d.label}</span>`).join('');
+  const sc={x:{grid:{display:false},ticks:{font:{size:11}}},y:{beginAtZero:true,ticks:{font:{size:11},callback:v=>S.tab==='rev'?fmtM(v):v}}};
+  if(S.tab==='both')sc.y2={beginAtZero:true,position:'right',grid:{display:false},ticks:{font:{size:11},callback:v=>fmtM(v)}};
+  dc(cid);CH[cid]=new Chart(el.getContext('2d'),{data:{labels:MO,datasets:ds},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:sc}});
+}
+function renderCharts(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all);
+  const priAll=prYr?filt(getRows(prYr)):null;
+  const prLbl=prYr||'Prior';
+  if(S.view==='overview')buildChart('ch-ov','leg-ov',cur,priAll,prLbl);
+  if(S.view==='wh'){const f=r=>String(r.whs)===S.wh;buildChart('ch-wh','leg-wh',cur.filter(f),priAll?priAll.filter(f):null,prLbl);}
+  if(S.view==='cust'){const name=decodeURIComponent(S.cust);const f=r=>r.custName===name;buildChart('ch-cust','leg-cust',cur.filter(f),priAll?priAll.filter(f):null,prLbl);}
+  if(S.view==='cat'){const f=r=>String(r.vendor)===S.cat;buildChart('ch-cat','leg-cat',cur.filter(f),priAll?priAll.filter(f):null,prLbl);}
+  if(S.view==='skuAccts'){const f=r=>String(r.itemno)===String(S.sku);buildChart('ch-sku','leg-sku',cur.filter(f),priAll?priAll.filter(f):null,prLbl);}
+}
+
+// ── Modal ─────────────────────────────────────────────────────────
+function renderModal(){
+  const yr=S.yr||new Date().getFullYear();
+  const lm=getLM(yr);const lk=new Set(lm.map(m=>m.k));
+  const logs=(DB.log||[]).slice(-8).reverse();
+  const cells=MO.map((m,i)=>{const k=yr+'-'+String(i+1).padStart(2,'0');return{k,m,loaded:lm.find(x=>x.k===k)||null};});
+  return`<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+  <div class="mhdr"><span class="mtitle">Upload Monthly Velocity Report</span><button class="mclose" id="modal-close">×</button></div>
+  <div class="mbody">
+  <div class="dz" id="dz">
+    <div style="font-size:40px;color:var(--t3);margin-bottom:10px">↑</div>
+    <strong>Drop your monthly .xlsx file here</strong>
+    <p>Month detected from filename. Name files like:<br><code>01-2026_Hackney_All_900.xlsx</code> or <code>2026-03_report.xlsx</code><br>You can drop multiple months at once.</p>
+    <input type="file" id="fu" accept=".xlsx,.xls,.csv" multiple>
+  </div>
+  <div class="slbl">Months Loaded — ${yr}</div>
+  <div class="mgrid">
+  ${cells.map(c=>`<div class="mcell ${c.loaded?'loaded':'missing'}">
+    ${c.loaded?`<button class="mcdel" data-del="${c.k}">×</button>`:''}
+    <div class="mm">${c.m} ${yr}</div>
+    ${c.loaded?`<div class="ms">${fmtC(c.loaded.cases)} cases</div>`:`<div class="ms" style="color:var(--t3)">not loaded</div>`}
+  </div>`).join('')}
+  </div>
+  ${logs.length?`<div class="slbl">Upload Log</div><div>${logs.map(l=>`<div class="lrow"><span style="font-size:15px">${l.ok?'✓':'✗'}</span><div><div>${l.msg}</div><div style="font-size:10px;color:var(--t3)">${l.at}</div></div></div>`).join('')}</div>`:''}
+  <div style="display:flex;gap:8px;margin-top:1.25rem;padding-top:.875rem;border-top:0.5px solid var(--bdr)">
+    <button id="clear-all-btn" style="font-size:12px;color:var(--redt);border-color:var(--redt)">Clear All Data</button>
+  </div>
+  </div></div></div>`;
+}
+
+function renderEmpty(){
+  return`<div class="topbar"><div><span class="brand">Velocity Dashboard</span><span class="brand-sub">Hackney Distributing</span></div>
+  <div class="tbr"><button class="btn bblue" id="open-modal">+ Upload First Report</button></div></div>
+  ${S.modal?renderModal():''}
+  <div class="empty">
+  <div style="font-size:52px;margin-bottom:16px">📊</div>
+  <h2>Ready for your velocity data</h2>
+  <p>Upload your monthly Hackney velocity report to get started.<br>Name files like <code>01-2026_Hackney_All_900.xlsx</code> — the month and year are read from the filename automatically.</p>
+  <p style="margin-top:6px;font-size:12px;color:var(--t3)">Columns auto-detected: Whs · Customer Name · Group Name · City · St · Vendor · Itemno · Description · Pack · Size · Qty · Sales $</p>
+  <button class="btn bgreen" style="margin-top:1.5rem;padding:9px 22px;font-size:14px" id="open-modal2">Open Upload Manager</button>
+  </div>`;
+}
+
+// ── File ingestion (hardwired to Hackney column layout) ───────────
+function ingestFile(file){
+  // Detect month/year from filename
+  let mo=null,yr=null;
+  const fn=file.name;
+  let m=fn.match(/^(\d{2})-(\d{4})/);if(m){mo=parseInt(m[1])-1;yr=parseInt(m[2]);}
+  if(mo===null){m=fn.match(/^(\d{4})-(\d{2})/);if(m){yr=parseInt(m[1]);mo=parseInt(m[2])-1;}}
+  if(mo===null){m=fn.match(/[_\-](\d{2})[_\-](\d{4})/);if(m){mo=parseInt(m[1])-1;yr=parseInt(m[2]);}}
+  if(mo===null){for(let i=0;i<MO.length;i++){if(fn.toLowerCase().includes(MO[i].toLowerCase())){mo=i;break;}}}
+  if(yr===null){m=fn.match(/20(\d{2})/);if(m)yr=parseInt('20'+m[1]);}
+  if(mo===null||yr===null){
+    toast('Month not found in filename "'+fn+'". Rename to: MM-YYYY_name.xlsx (e.g. 01-2026_Hackney.xlsx)','err');
+    return;
+  }
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const wb=XLSX.read(ev.target.result,{type:'binary'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
+      if(!raw||raw.length<2){toast('Empty file: '+fn,'err');return;}
+      // Find header row (scan first 5 rows)
+      let hdrIdx=0;
+      for(let i=0;i<Math.min(5,raw.length);i++){
+        if(raw[i].some(c=>String(c||'').toLowerCase().includes('customer name'))){hdrIdx=i;break;}
+      }
+      const hdr=raw[hdrIdx].map(h=>String(h||'').trim().toLowerCase());
+      const col=name=>hdr.indexOf(name);
+      const iWhs=col('whs'),iCustNo=col('customer #'),iGroup=col('group name'),iCustName=col('customer name');
+      const iCity=col('city'),iSt=col('st'),iPhone=col('phone'),iAddr=col('address1');
+      const iVendor=col('vendor'),iItemno=col('itemno'),iPack=col('pack'),iSize=col('size');
+      const iDesc=hdr.findIndex(h=>h.includes('description'));
+      const iQty=col('qty'),iSales=col('sales $');
+      const iLoc=col('loc'),iCust=col('customer');
+      if(iCustName<0||iItemno<0||iQty<0){
+        toast('Missing columns in '+fn+'. Expected: Customer Name, Itemno, Qty','err');
+        return;
+      }
+      const rows=[];
+      raw.slice(hdrIdx+1).forEach(row=>{
+        if(!row[iCustName])return;
+        const qty=+(row[iQty]||0);if(!qty)return;
+        rows.push({
+          whs:String(row[iWhs]||'').trim(),
+          customer:row[iCust]||'',loc:row[iLoc]||'',
+          custNo:String(row[iCustNo]||'').trim(),
+          groupName:String(row[iGroup]||'').trim(),
+          custName:String(row[iCustName]||'').trim(),
+          addr:String(row[iAddr]||'').trim(),
+          city:String(row[iCity]||'').trim(),
+          st:String(row[iSt]||'').trim(),
+          zip:String(row[row.indexOf ? hdr.indexOf('zip') : -1]||'').trim(),
+          phone:String(row[iPhone]||'').trim(),
+          vendor:String(row[iVendor]||''),
+          itemno:String(row[iItemno]||''),
+          pack:String(row[iPack]||''),
+          size:String(row[iSize]||'').trim(),
+          description:String(row[iDesc]||'').trim(),
+          qty,sales:+(row[iSales]||0),
+        });
+      });
+      if(!rows.length){toast('No rows with Qty > 0 found in '+fn,'err');return;}
+      const mk=yr+'-'+String(mo+1).padStart(2,'0');
+      const rec={id:Date.now()+Math.random(),distributor:'Hackney',monthKey:mk,month:mo,year:yr,uploadedAt:new Date().toLocaleString(),rows};
+      const ei=DB.uploads.findIndex(u=>u.monthKey===mk);
+      if(ei>=0)DB.uploads[ei]=rec;else DB.uploads.push(rec);
+      const msg=MO[mo]+' '+yr+' loaded — '+fmtC(rows.length)+' rows'+(ei>=0?' (replaced)':'');
+      DB.log.push({msg,ok:true,at:new Date().toLocaleString()});
+      if(DB.log.length>60)DB.log=DB.log.slice(-60);
+      showOv('Saving '+MO[mo]+' '+yr+'...');
+      saveRec(rec).then(()=>{hideOv();const ys=getYears();S.yr=+ys[ys.length-1];S.modal=true;render();toast(msg);});
+    }catch(e){toast('Error reading '+fn+': '+e.message,'err');}
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ── Excel Export ──────────────────────────────────────────────────
+function doExport(){
+  const ys=getYears();const prYr=ys[ys.indexOf(+S.yr)-1];
+  const all=getRows(S.yr);const cur=filt(all);
+  if(!cur.length){toast('No data to export','err');return;}
+  const wb=XLSX.utils.book_new();
+  const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
+  // Summary
+  const sr=[['Velocity Report — Hackney Distributing'],[`Year: ${S.yr} | Period: ${S.vm||'YTD'} | WH: ${S.fWH} | Vendor: ${S.fVendor}`],[],
+    ['Metric',S.yr],['Total Cases',totC],['Total Revenue ($)',+totR.toFixed(2)],
+    ['Active Accounts',new Set(cur.map(r=>r.custName)).size],['Active SKUs',new Set(cur.map(r=>r.itemno)).size],[],
+    ['Month',...MO,'Total'],
+    ['Cases',...MO.map((_,m)=>moV(cur,m,'qty')),totC],
+    ['Revenue ($)',...MO.map((_,m)=>+moV(cur,m,'sales').toFixed(2)),+totR.toFixed(2)]];
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(sr),'Summary');
+  // Warehouse
+  const whs=rollup(cur,r=>String(r.whs));
+  const wr=[['Warehouse','Cases',...MO,'Revenue','Accounts']];
+  whs.forEach(w=>wr.push([w.key,w.cases,...w.mo,+w.rev.toFixed(2),w.custs]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(wr),'Warehouse Summary');
+  // Products
+  const skus=rollup(cur,r=>r.itemno+'§'+r.description.trim());
+  const pr=[['Item #','Description','Cases',...MO,'Revenue','Selling Accounts']];
+  skus.forEach(sk=>{const[ino,desc]=sk.key.split('§');pr.push([ino,desc,sk.cases,...sk.mo,+sk.rev.toFixed(2),sk.custs]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pr),'Product Summary');
+  // Accounts
+  const accts=rollup(cur,r=>r.custName);
+  const ar=[['Account','Group','City','St','WH','Cases','Revenue']];
+  accts.forEach(a=>{const ref=cur.find(r=>r.custName===a.key)||{};ar.push([a.key,ref.groupName||'',ref.city||'',ref.st||'',ref.whs||'',a.cases,+a.rev.toFixed(2)]);});
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(ar),'Account Summary');
+  // Raw
+  const rr=[['Whs','Customer Name','Group Name','City','St','Vendor','Item #','Description','Pack','Size','Month','Qty','Sales $']];
+  cur.forEach(r=>rr.push([r.whs,r.custName,r.groupName,r.city,r.st,r.vendor,r.itemno,r.description.trim(),r.pack,(r.size||'').trim(),MO[r._mo],r.qty,+r.sales.toFixed(2)]));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rr),'Raw Data');
+  XLSX.writeFile(wb,`velocity_hackney_${S.yr}_${S.vm||'YTD'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excel exported — 5 sheets');
+}
+
+// ── Events ────────────────────────────────────────────────────────
+function bindAll(){
+  document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{
+    const v=el.dataset.nav;if(v==='overview'){S.wh=null;S.cust=null;S.cat=null;S.sku=null;}go(v);
+  }));
+  document.querySelectorAll('[data-bc]').forEach(el=>el.addEventListener('click',()=>{
+    const i=parseInt(el.dataset.bc);
+    if(i===-1){S.wh=null;S.cust=null;S.cat=null;S.sku=null;go('overview');}
+    else if(i===0){S.cust=null;S.sku=null;go(S.wh?'wh':S.cat?'cat':'overview');}
+    else if(i===1){S.sku=null;go('cust');}
+  }));
+  document.querySelectorAll('[data-go-wh]').forEach(el=>el.addEventListener('click',()=>go('wh',{wh:el.dataset.goWh})));
+  document.querySelectorAll('[data-go-cust]').forEach(el=>el.addEventListener('click',()=>go('cust',{cust:el.dataset.goCust})));
+  document.querySelectorAll('[data-go-cat]').forEach(el=>el.addEventListener('click',()=>go('cat',{cat:el.dataset.goCat,sku:null})));
+  document.querySelectorAll('[data-go-sku]').forEach(el=>el.addEventListener('click',()=>go('skuAccts',{sku:el.dataset.goSku})));
+  document.querySelectorAll('[data-go-sku-cat]').forEach(el=>el.addEventListener('click',()=>go('skuAccts',{sku:el.dataset.goSkuCat})));
+  document.querySelectorAll('[data-mo]').forEach(el=>el.addEventListener('click',()=>{S.vm=el.dataset.mo==='ytd'?null:(el.dataset.mo||null);render();}));
+  const ys=document.getElementById('yr-sel');if(ys)ys.addEventListener('change',()=>{S.yr=+ys.value;S.vm=null;S.view='overview';S.wh=null;S.cust=null;S.cat=null;S.sku=null;render();});
+  const fw=document.getElementById('f-wh');if(fw)fw.addEventListener('change',()=>{S.fWH=fw.value;render();});
+  const fv=document.getElementById('f-vendor');if(fv)fv.addEventListener('change',()=>{S.fVendor=fv.value;render();});
+  document.querySelectorAll('[data-tab]').forEach(el=>el.addEventListener('click',()=>{S.tab=el.dataset.tab;render();}));
+  const yc=document.getElementById('yoy-chk');if(yc)yc.addEventListener('change',()=>{S.yoy=yc.checked;render();});
+  const eb=document.getElementById('exp-btn');if(eb)eb.addEventListener('click',doExport);
+  ['open-modal','open-modal2'].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener('click',()=>{S.modal=true;render();});});
+  const mc=document.getElementById('modal-close');if(mc)mc.addEventListener('click',()=>{S.modal=false;render();});
+  const mbg=document.getElementById('modal-bg');if(mbg)mbg.addEventListener('click',e=>{if(e.target===mbg){S.modal=false;render();}});
+  const dz=document.getElementById('dz');
+  if(dz){
+    dz.addEventListener('click',()=>document.getElementById('fu')?.click());
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('over');});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+    dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');[...e.dataTransfer.files].forEach(ingestFile);});
+  }
+  const fu=document.getElementById('fu');if(fu)fu.addEventListener('change',e=>{[...e.target.files].forEach(ingestFile);e.target.value='';});
+  document.querySelectorAll('[data-del]').forEach(el=>el.addEventListener('click',async e=>{
+    e.stopPropagation();
+    const k=el.dataset.del;
+    if(confirm('Remove '+k+'? Cannot be undone.')){
+      showOv('Removing...');
+      DB.uploads=DB.uploads.filter(u=>u.monthKey!==k);
+      DB.log.push({msg:'Deleted '+k,ok:true,at:new Date().toLocaleString()});
+      await delRec(k);hideOv();
+      if(S.vm===k)S.vm=null;render();toast('Month removed');
+    }
+  }));
+  const ca=document.getElementById('clear-all-btn');
+  if(ca)ca.addEventListener('click',async()=>{
+    if(confirm('Clear ALL data? Cannot be undone.')){
+      showOv('Clearing...');await delAll();
+      DB={uploads:[],log:[]};hideOv();
+      S.yr=null;S.vm=null;S.view='overview';S.modal=false;render();toast('All data cleared');
+    }
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
