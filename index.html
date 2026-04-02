@@ -869,7 +869,9 @@ function handleFile(file){
   const distName=(distInput?distInput.value:'').trim();
   if(!distName){toast('Please enter a distributor name first','err');if(distInput)distInput.focus();return;}
   PENDING.dist=distName;S.pendingDist=distName;
+  toast('Reading file...');
   const reader=new FileReader();
+  reader.onerror=()=>toast('Error reading file — try again','err');
   reader.onload=ev=>{
     try{
       const wb=XLSX.read(ev.target.result,{type:'binary'});
@@ -882,11 +884,20 @@ function handleFile(file){
       }
       const headers=raw[hdrIdx].map(h=>String(h||'').trim());
       PENDING.file={rawRows:raw,fname:file.name,hdrIdx,headers};
-      // Inject mapper directly — no full re-render
+      toast('File loaded — map columns below');
+      // Inject mapper directly into existing modal
       const mapZone=document.getElementById('map-zone');
-      if(mapZone){mapZone.innerHTML=renderMapper();}
-      else{render();}
-    }catch(e){toast('Error reading '+file.name+': '+e.message,'err');}
+      if(mapZone){
+        mapZone.innerHTML=renderMapper();
+        // Scroll mapper into view
+        mapZone.scrollIntoView({behavior:'smooth',block:'start'});
+      } else {
+        S.modal=true;render();
+      }
+    }catch(e){
+      toast('Error reading '+file.name+': '+e.message,'err');
+      console.error('handleFile error:',e);
+    }
   };
   reader.readAsBinaryString(file);
 }
