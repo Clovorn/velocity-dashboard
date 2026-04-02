@@ -1,13 +1,8 @@
-[build]
-  functions = "netlify/functions"
-  publish = "."
-
-[[redirects]]
-  from = "/api/auth"
-  to = "/.netlify/functions/auth"
-  status = 200
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
+{
+  "name": "velocity-dashboard",
+  "version": "1.0.0",
+  "description": "Hackney Distributing Velocity Dashboard",
+  "dependencies": {
+    "@netlify/blobs": "^7.0.0"
+  }
+}
