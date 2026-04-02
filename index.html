@@ -1223,8 +1223,8 @@ function renderMapper(){
       </div>`).join('')}
     </div>
     <div class="mapper-actions">
-      <button class="btn btn-g" id="mapper-import">Import File</button>
-      <button class="btn" id="mapper-cancel">Cancel</button>
+      <button class="btn btn-g" id="mapper-import" onclick="importPendingFile()">Import File</button>
+      <button class="btn" id="mapper-cancel" onclick="S.pendingFile=null;render()">Cancel</button>
     </div>
   </div>`;
 }
