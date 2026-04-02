@@ -279,7 +279,18 @@ async function loadFromServer(){
     if(r.status===401){clearAuth();renderLogin('Session expired');return;}
     if(r.ok){
       const d=await r.json();
-      if(d.uploads){DB.uploads=d.uploads.map(u=>({...u,distributor:u.distributor||'Hackney'}));DB.log=d.log||[];}
+      if(d.uploads){
+        // Merge server uploads with local — keep local rows when available
+        const localMap={};
+        DB.uploads.forEach(u=>{localMap[u.distributor+'|'+u.monthKey]=u;});
+        DB.uploads=d.uploads.map(u=>{
+          const key=(u.distributor||'Hackney')+'|'+u.monthKey;
+          const local=localMap[key];
+          // Keep local rows if we have them (they're full), otherwise use server rows
+          return{...u,distributor:u.distributor||'Hackney',rows:(local&&local.rows&&local.rows.length)?local.rows:(u.rows||[])};
+        });
+        DB.log=d.log||[];
+      }
       if(d.role)AUTH.role=d.role;
       if(d.pricing){Object.assign(PRICES,d.pricing);savePrices();}
     }
@@ -912,12 +923,14 @@ function doImport(){
   if(ei>=0)DB.uploads[ei]=rec;else DB.uploads.push(rec);
   DB.log.push({msg:`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows${ei>=0?' (replaced)':''}`,ok:true,at:new Date().toLocaleString()});
   PENDING.file=null;PENDING.dist='';
-  S.activeDist=distName;S.view='overview';S.modal=false;
+  S.activeDist=distName;S.view='overview';
+  // Keep modal OPEN so user can upload more files
+  S.modal=true;
   const ys=getYears();S.yr=+ys[ys.length-1];
   render();
   toast(`Uploading ${fmtC(rows.length)} rows to database...`);
   saveRec(rec).then(()=>{
-    toast(`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows saved`);
+    toast(`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows saved ✓`);
     loadFromServer().then(()=>render());
   }).catch(e=>toast('Upload error: '+(e.message||e),'err'));
 }
