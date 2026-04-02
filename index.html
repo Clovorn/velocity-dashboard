@@ -922,16 +922,47 @@ function doImport(){
   const ei=DB.uploads.findIndex(u=>u.monthKey===mk&&u.distributor===distName);
   if(ei>=0)DB.uploads[ei]=rec;else DB.uploads.push(rec);
   DB.log.push({msg:`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows${ei>=0?' (replaced)':''}`,ok:true,at:new Date().toLocaleString()});
-  PENDING.file=null;PENDING.dist='';
-  S.activeDist=distName;S.view='overview';
-  // Keep modal OPEN so user can upload more files
-  S.modal=true;
+  S.activeDist=distName;
   const ys=getYears();S.yr=+ys[ys.length-1];
-  render();
-  toast(`Uploading ${fmtC(rows.length)} rows to database...`);
+
+  // Clear the mapper and reset for next upload WITHOUT closing modal or re-rendering
+  PENDING.file=null;PENDING.dist='';
+  const mapZone=document.getElementById('map-zone');
+  if(mapZone)mapZone.innerHTML='';
+  // Update the month grid to show this month as loaded
+  const uploadMsg=`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows`;
+  toast(`Uploading ${fmtC(rows.length)} rows...`);
+
+  // Update dashboard in background without closing modal
   saveRec(rec).then(()=>{
-    toast(`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows saved ✓`);
-    loadFromServer().then(()=>render());
+    toast(uploadMsg+' ✓ Saved');
+    // Re-render just the month grid inside modal so user sees it loaded
+    const mgrid=document.querySelector('.mgrid');
+    if(mgrid){
+      const lm=getLM(S.yr,null),lk=new Set(lm.map(m=>m.k));
+      const yr2=S.yr||new Date().getFullYear();
+      mgrid.innerHTML=MO.map((m2,i)=>{const k=yr2+'-'+String(i+1).padStart(2,'0'),loaded=lm.find(x=>x.k===k);
+        return`<div class="mcell ${loaded?'loaded':'missing'}">
+          ${loaded?`<button class="mcdel" data-del="${k}">×</button>`:''}
+          <div class="mm">${m2} ${yr2}</div>
+          ${loaded?`<div class="ms">${fmtC(loaded.cases)} cases</div>`:`<div class="ms" style="color:var(--t3)">not loaded</div>`}
+        </div>`;}).join('');
+      // Re-bind delete buttons
+      document.querySelectorAll('[data-del]').forEach(el=>el.addEventListener('click',async e=>{
+        e.stopPropagation();const k=el.dataset.del;
+        if(confirm(`Remove ${k}? Cannot be undone.`)){
+          DB.uploads=DB.uploads.filter(u=>u.monthKey!==k);
+          await delRec(k,null);if(S.vm===k)S.vm=null;render();toast('Month removed');
+        }
+      }));
+    }
+    // Update dashboard view silently
+    loadFromServer().then(()=>{
+      const root=document.getElementById('root');
+      if(!document.getElementById('modal-bg')&&root){
+        S.modal=false;render();
+      }
+    });
   }).catch(e=>toast('Upload error: '+(e.message||e),'err'));
 }
 
