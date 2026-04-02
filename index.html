@@ -555,7 +555,31 @@ function getRows(yr,dist){
 }
 
 
-// ── Sort header helper ────────────────────────────────────────────
+// ── Math ──────────────────────────────────────────────────────────
+const sa=a=>a.reduce((s,v)=>s+(+v||0),0);
+function fmtM(n){if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(0)+'K';return'$'+n.toFixed(2);}
+function fmtC(n){return Math.round(n).toLocaleString();}
+function yp(c,p){return p>0?Math.round((c-p)/p*100):null;}
+function pill(v){if(v===null)return'<span class="pill pn">—</span>';return'<span class="pill '+(v>0?'pu':v<0?'pd':'pn')+'">'+(v>0?'+':'')+v+'%</span>';}
+function moV(rows,mo,field){return sa(rows.filter(r=>r._mo===mo).map(r=>+r[field]||0));}
+function rollup(rows,kfn){
+  const m={};
+  rows.forEach(r=>{
+    const k=kfn(r);if(!k)return;
+    if(!m[k])m[k]={key:k,cases:0,rev:0,cs:new Set(),ss:new Set(),mo:new Array(12).fill(0)};
+    m[k].cases+=+r.qty||0;m[k].rev+=+r.sales||0;
+    m[k].cs.add(r.custName);m[k].ss.add(r.itemno);
+    m[k].mo[r._mo]+=+r.qty||0;
+  });
+  return Object.values(m).map(x=>({...x,custs:x.cs.size,skus:x.ss.size})).sort((a,b)=>b.cases-a.cases);
+}
+function sortRows(rows,col,dir){
+  return[...rows].sort((a,b)=>{
+    let av=a[col]??0,bv=b[col]??0;
+    if(typeof av==='string'&&typeof bv==='string')return dir*av.localeCompare(bv);
+    return dir*(+av-+bv);
+  });
+}
 function th(label,col){
   const active=S.sort.col===col;
   const cls=active?(S.sort.dir===1?'sort-asc':'sort-desc'):'';
@@ -1223,7 +1247,7 @@ function renderMapper(){
       </div>`).join('')}
     </div>
     <div class="mapper-actions">
-      <button class="btn btn-g" id="mapper-import" onclick="console.log('Import button clicked');importPendingFile()">Import File</button>
+      <button class="btn btn-g" id="mapper-import" onclick="importPendingFile()">Import File</button>
       <button class="btn" id="mapper-cancel" onclick="S.pendingFile=null;render()">Cancel</button>
     </div>
   </div>`;
@@ -1279,18 +1303,19 @@ function handleFile(file){
 }
 
 function importPendingFile(){
-  console.log('importPendingFile called');
-  console.log('pendingFile:', S.pendingFile);
-  console.log('pendingDist:', S.pendingDist);
-  if(!S.pendingFile){console.log('ERROR: no pendingFile');toast('No file loaded — please choose a file first','err');return;}
+  // Read distributor name directly from the input field
+  const distInput=document.getElementById('dist-name-input');
+  const distName=(distInput?distInput.value:'').trim()||S.pendingDist||'';
+  if(!distName){toast('Please enter a distributor name first','err');if(distInput)distInput.focus();return;}
+  S.pendingDist=distName;
+
+  if(!S.pendingFile){toast('No file loaded — please choose a file first','err');return;}
   const {rawRows,fname,hdrIdx}=S.pendingFile;
-  const distName=S.pendingDist;
-  if(!distName){toast('Please enter a distributor name','err');return;}
+
   // Read column mapping from selects
   const fields=['custName','whs','groupName','custNo','city','st','vendor','itemno','description','qty','sales','pack','size'];
   const colMap={};
   fields.forEach(f=>{const el=document.getElementById('map-'+f);if(el&&el.value!=='')colMap[f]=parseInt(el.value);});
-  console.log('colMap:', colMap);
   if(colMap.custName===undefined||colMap.itemno===undefined||colMap.qty===undefined){
     toast('Customer Name, Item #, and Cases/Qty are required — please map those columns','err');return;
   }
