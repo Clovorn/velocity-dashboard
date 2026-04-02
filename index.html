@@ -582,6 +582,14 @@ function sortRows(rows,col,dir){
     return dir*(+av-+bv);
   });
 }
+function filt(rows){
+  return rows.filter(r=>{
+    if(S.fWH!=='All'&&String(r.whs||'')!==S.fWH)return false;
+    if(S.fVendor!=='All'&&String(r.vendor||'')!==S.fVendor)return false;
+    return true;
+  });
+}
+function distColor(name){const dists=getDistributors();const i=dists.indexOf(name);return DIST_COLORS[i%DIST_COLORS.length];}
 function th(label,col){
   const active=S.sort.col===col;
   const cls=active?(S.sort.dir===1?'sort-asc':'sort-desc'):'';
@@ -1181,7 +1189,7 @@ function renderModal(){
     <label class="choose-btn" for="fu" style="cursor:pointer">Choose File</label>
   </div>
 
-  ${PENDING.file?renderMapper():''}
+  <div id="map-zone">${PENDING.file?renderMapper():''}</div>
 
   <div class="slbl">Months Loaded${activeDist?' — '+activeDist:''}</div>
   <div class="mgrid">
@@ -1280,6 +1288,14 @@ function detectMonthFromFilename(fname){
   return{mo,yr};
 }
 
+
+function bindMapperEvents(){
+  const mi=document.getElementById('mapper-import');
+  if(mi){mi.onclick=null;mi.addEventListener('click',importPendingFile);}
+  const mcan=document.getElementById('mapper-cancel');
+  if(mcan){mcan.onclick=null;mcan.addEventListener('click',()=>{PENDING.file=null;PENDING.dist='';const mz=document.getElementById('map-zone');if(mz)mz.innerHTML='';});}
+}
+
 function handleFile(file){
   const distName=(document.getElementById('dist-name-input')||{}).value?.trim();
   if(!distName){toast('Please enter a distributor name first','err');return;}
@@ -1298,7 +1314,14 @@ function handleFile(file){
       }
       const headers=raw[hdrIdx].map(h=>String(h||'').trim());
       PENDING.file={rawRows:raw,fname:file.name,hdrIdx,headers};
-      S.modal=true;render();
+      // Inject mapper directly into existing modal without full re-render
+      const mapZone=document.getElementById('map-zone');
+      if(mapZone){
+        mapZone.innerHTML=renderMapper();
+        bindMapperEvents();
+      } else {
+        S.modal=true;render();
+      }
     }catch(e){toast('Error reading '+file.name+': '+e.message,'err');}
   };
   reader.readAsBinaryString(file);
