@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -324,11 +325,8 @@ async function loadFromServer(){
 function runSearch(q){
   if(!q||q.length<2)return{customers:[],products:[],warehouses:[],vendors:[]};
   const ql=q.toLowerCase();
-  // Search across all loaded data
   const allRows=[];
   DB.uploads.forEach(u=>(u.rows||[]).forEach(r=>allRows.push({...r,_mo:u.month,_yr:u.year,_dist:u.distributor})));
-
-  // Customers
   const custMap={};
   allRows.forEach(r=>{
     if(!r.custName||!r.custName.toLowerCase().includes(ql))return;
@@ -337,19 +335,15 @@ function runSearch(q){
     custMap[k].cases+=+r.qty||0;custMap[k].sales+=+r.sales||0;
   });
   const customers=Object.values(custMap).sort((a,b)=>b.cases-a.cases).slice(0,8);
-
-  // Products/SKUs
   const prodMap={};
   allRows.forEach(r=>{
     const desc=(r.description||'').trim();
-    if(!desc||(!desc.toLowerCase().includes(ql)&&!String(r.itemno||'').includes(q)))return;
+    if(!desc||(!desc.toLowerCase().includes(ql)&&!String(r.itemno||'').toLowerCase().includes(ql)))return;
     const k=r.itemno+'|'+r._dist;
     if(!prodMap[k])prodMap[k]={itemno:r.itemno,desc,dist:r._dist,vendor:r.vendor||'',cases:0,sales:0};
     prodMap[k].cases+=+r.qty||0;prodMap[k].sales+=+r.sales||0;
   });
   const products=Object.values(prodMap).sort((a,b)=>b.cases-a.cases).slice(0,8);
-
-  // Warehouses
   const whMap={};
   allRows.forEach(r=>{
     const whs=String(r.whs||'');
@@ -359,8 +353,6 @@ function runSearch(q){
     whMap[k].cases+=+r.qty||0;whMap[k].sales+=+r.sales||0;
   });
   const warehouses=Object.values(whMap).sort((a,b)=>b.cases-a.cases).slice(0,5);
-
-  // Vendors
   const vnMap={};
   allRows.forEach(r=>{
     const v=String(r.vendor||'');
@@ -370,126 +362,100 @@ function runSearch(q){
     vnMap[k].cases+=+r.qty||0;vnMap[k].sales+=+r.sales||0;vnMap[k].skus.add(r.itemno);
   });
   const vendors=Object.values(vnMap).map(v=>({...v,skus:v.skus.size})).sort((a,b)=>b.cases-a.cases).slice(0,5);
-
   return{customers,products,warehouses,vendors};
+}
+
+function highlight(text,q){
+  if(!q||!text)return text||'';
+  const idx=text.toLowerCase().indexOf(q.toLowerCase());
+  if(idx<0)return text;
+  return text.slice(0,idx)+'<mark style="background:rgba(37,112,200,.2);color:var(--t1);border-radius:2px">'+text.slice(idx,idx+q.length)+'</mark>'+text.slice(idx+q.length);
 }
 
 function renderSearchResults(q){
   if(!q||q.length<2)return'';
   const res=runSearch(q);
   const total=res.customers.length+res.products.length+res.warehouses.length+res.vendors.length;
-  if(!total)return\`<div class="search-results open"><div class="sr-empty">No results for "<strong>\${q}</strong>"</div></div>\`;
-
-  let html='<div class="search-results open">';
-
+  if(!total)return'<div class="search-results open"><div class="sr-empty">No results for <strong>'+q+'</strong></div></div>';
+  let out='<div class="search-results open">';
   if(res.customers.length){
-    html+=\`<div class="sr-section"><div class="sr-label">👤 Customers (\${res.customers.length})</div>\`;
-    res.customers.forEach(c=>{
-      html+=\`<div class="sr-item" data-sr-cust="\${encodeURIComponent(c.name)}" data-sr-dist="\${c.dist}" data-sr-whs="\${c.whs}">
-        <div class="sr-item-left">
-          <span class="sr-badge wh-b">WH \${c.whs}</span>
-          <div><div class="sr-item-name" title="\${c.name}">\${highlight(c.name,q)}</div>
-          <div class="sr-item-sub">\${c.dist} · \${c.city}\${c.st?' '+c.st:''}</div></div>
-        </div>
-        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(c.cases)} cases</div><div>\${fmtM(c.sales)}</div></div>
-      </div>\`;
+    out+='<div class="sr-section"><div class="sr-label">&#128100; Customers ('+res.customers.length+')</div>';
+    res.customers.forEach(function(c){
+      out+='<div class="sr-item" data-sr-cust="'+encodeURIComponent(c.name)+'" data-sr-dist="'+c.dist+'" data-sr-whs="'+c.whs+'">'
+        +'<div class="sr-item-left"><span class="sr-badge wh-b">WH '+c.whs+'</span>'
+        +'<div><div class="sr-item-name" title="'+c.name+'">'+highlight(c.name,q)+'</div>'
+        +'<div class="sr-item-sub">'+c.dist+' &middot; '+c.city+(c.st?' '+c.st:'')+'</div></div></div>'
+        +'<div class="sr-item-right"><div class="sr-item-cases">'+fmtC(c.cases)+' cases</div><div>'+fmtM(c.sales)+'</div></div></div>';
     });
-    html+='</div>';
+    out+='</div>';
   }
-
   if(res.products.length){
-    if(res.customers.length)html+='<div class="sr-divider"></div>';
-    html+=\`<div class="sr-section"><div class="sr-label">📦 Products (\${res.products.length})</div>\`;
-    res.products.forEach(p=>{
-      html+=\`<div class="sr-item" data-sr-sku="\${p.itemno}" data-sr-dist="\${p.dist}">
-        <div class="sr-item-left">
-          <span class="sr-badge vn-b">\${p.itemno}</span>
-          <div><div class="sr-item-name" title="\${p.desc}">\${highlight(p.desc,q)}</div>
-          <div class="sr-item-sub">\${p.dist} · Vendor \${p.vendor}</div></div>
-        </div>
-        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(p.cases)} cases</div><div>\${fmtM(p.sales)}</div></div>
-      </div>\`;
+    if(res.customers.length)out+='<div class="sr-divider"></div>';
+    out+='<div class="sr-section"><div class="sr-label">&#128230; Products ('+res.products.length+')</div>';
+    res.products.forEach(function(p){
+      out+='<div class="sr-item" data-sr-sku="'+p.itemno+'" data-sr-dist="'+p.dist+'">'
+        +'<div class="sr-item-left"><span class="sr-badge vn-b">'+p.itemno+'</span>'
+        +'<div><div class="sr-item-name" title="'+p.desc+'">'+highlight(p.desc,q)+'</div>'
+        +'<div class="sr-item-sub">'+p.dist+' &middot; Vendor '+p.vendor+'</div></div></div>'
+        +'<div class="sr-item-right"><div class="sr-item-cases">'+fmtC(p.cases)+' cases</div><div>'+fmtM(p.sales)+'</div></div></div>';
     });
-    html+='</div>';
+    out+='</div>';
   }
-
   if(res.warehouses.length){
-    if(res.customers.length||res.products.length)html+='<div class="sr-divider"></div>';
-    html+=\`<div class="sr-section"><div class="sr-label">🏭 Warehouses</div>\`;
-    res.warehouses.forEach(w=>{
-      html+=\`<div class="sr-item" data-sr-wh="\${w.whs}" data-sr-dist="\${w.dist}">
-        <div class="sr-item-left">
-          <span class="sr-badge wh-b">WH \${w.whs}</span>
-          <div class="sr-item-sub">\${w.dist}</div>
-        </div>
-        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(w.cases)} cases</div><div>\${fmtM(w.sales)}</div></div>
-      </div>\`;
+    if(res.customers.length||res.products.length)out+='<div class="sr-divider"></div>';
+    out+='<div class="sr-section"><div class="sr-label">&#127981; Warehouses</div>';
+    res.warehouses.forEach(function(w){
+      out+='<div class="sr-item" data-sr-wh="'+w.whs+'" data-sr-dist="'+w.dist+'">'
+        +'<div class="sr-item-left"><span class="sr-badge wh-b">WH '+w.whs+'</span>'
+        +'<div class="sr-item-sub">'+w.dist+'</div></div>'
+        +'<div class="sr-item-right"><div class="sr-item-cases">'+fmtC(w.cases)+' cases</div><div>'+fmtM(w.sales)+'</div></div></div>';
     });
-    html+='</div>';
+    out+='</div>';
   }
-
   if(res.vendors.length){
-    if(total>res.vendors.length)html+='<div class="sr-divider"></div>';
-    html+=\`<div class="sr-section"><div class="sr-label">🏷️ Vendors</div>\`;
-    res.vendors.forEach(v=>{
-      html+=\`<div class="sr-item" data-sr-cat="\${v.vendor}" data-sr-dist="\${v.dist}">
-        <div class="sr-item-left">
-          <span class="sr-badge vn-b">\${v.vendor}</span>
-          <div class="sr-item-sub">\${v.dist} · \${v.skus} SKUs</div>
-        </div>
-        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(v.cases)} cases</div><div>\${fmtM(v.sales)}</div></div>
-      </div>\`;
+    if(total>res.vendors.length)out+='<div class="sr-divider"></div>';
+    out+='<div class="sr-section"><div class="sr-label">&#127991; Vendors</div>';
+    res.vendors.forEach(function(v){
+      out+='<div class="sr-item" data-sr-cat="'+v.vendor+'" data-sr-dist="'+v.dist+'">'
+        +'<div class="sr-item-left"><span class="sr-badge vn-b">'+v.vendor+'</span>'
+        +'<div class="sr-item-sub">'+v.dist+' &middot; '+v.skus+' SKUs</div></div>'
+        +'<div class="sr-item-right"><div class="sr-item-cases">'+fmtC(v.cases)+' cases</div><div>'+fmtM(v.sales)+'</div></div></div>';
     });
-    html+='</div>';
+    out+='</div>';
   }
-
-  html+='</div>';
-  return html;
-}
-
-function highlight(text,q){
-  if(!q)return text;
-  const idx=text.toLowerCase().indexOf(q.toLowerCase());
-  if(idx<0)return text;
-  return text.slice(0,idx)+'<mark style="background:rgba(37,112,200,.2);color:var(--t1);border-radius:2px">'+text.slice(idx,idx+q.length)+'</mark>'+text.slice(idx+q.length);
+  out+='</div>';
+  return out;
 }
 
 function bindSearchResults(){
-  // Customer results
-  document.querySelectorAll('[data-sr-cust]').forEach(el=>el.addEventListener('click',()=>{
+  document.querySelectorAll('[data-sr-cust]').forEach(function(el){el.addEventListener('click',function(){
     const name=decodeURIComponent(el.dataset.srCust),dist=el.dataset.srDist,whs=el.dataset.srWhs;
-    closeSearch();
-    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    closeSearch();S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
     go('cust',{wh:whs,cust:encodeURIComponent(name)});
-  }));
-  // Product results
-  document.querySelectorAll('[data-sr-sku]').forEach(el=>el.addEventListener('click',()=>{
+  });});
+  document.querySelectorAll('[data-sr-sku]').forEach(function(el){el.addEventListener('click',function(){
     const sku=el.dataset.srSku,dist=el.dataset.srDist;
-    closeSearch();
-    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
-    go('skuAccts',{sku});
-  }));
-  // Warehouse results
-  document.querySelectorAll('[data-sr-wh]').forEach(el=>el.addEventListener('click',()=>{
+    closeSearch();S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('skuAccts',{sku:sku});
+  });});
+  document.querySelectorAll('[data-sr-wh]').forEach(function(el){el.addEventListener('click',function(){
     const wh=el.dataset.srWh,dist=el.dataset.srDist;
-    closeSearch();
-    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
-    go('wh',{wh});
-  }));
-  // Vendor results
-  document.querySelectorAll('[data-sr-cat]').forEach(el=>el.addEventListener('click',()=>{
+    closeSearch();S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('wh',{wh:wh});
+  });});
+  document.querySelectorAll('[data-sr-cat]').forEach(function(el){el.addEventListener('click',function(){
     const cat=el.dataset.srCat,dist=el.dataset.srDist;
-    closeSearch();
-    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
-    go('cat',{cat});
-  }));
+    closeSearch();S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('cat',{cat:cat});
+  });});
 }
 
 function closeSearch(){
   S.searchQ='';
   const inp=document.getElementById('search-input');if(inp)inp.value='';
-  const res=document.getElementById('search-results-panel');if(res)res.remove();
+  const panel=document.getElementById('search-results-panel');if(panel)panel.innerHTML='';
 }
+
 
 // ── Router ────────────────────────────────────────────────────────
 function go(v,ex){S.view=v;S.sort={col:null,dir:1};if(ex)Object.assign(S,ex);render();}
