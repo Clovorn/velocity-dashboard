@@ -145,6 +145,28 @@ code{font-family:monospace;background:var(--bg2);padding:1px 5px;border-radius:4
 .viewer-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;background:rgba(255,255,255,.08);color:rgba(255,255,255,.5);border-radius:20px;padding:3px 10px;margin-left:8px}
 .signout-btn{font-size:11px;color:rgba(255,255,255,.4);border:0.5px solid rgba(255,255,255,.15);border-radius:var(--r);padding:3px 10px;cursor:pointer;background:none}
 .signout-btn:hover{color:#fff;border-color:rgba(255,255,255,.4)}
+
+/* ── Search ── */
+.search-wrap{position:relative;flex:1;max-width:320px}
+.search-input{width:100%;padding:6px 32px 6px 30px;font-size:13px;background:#2c2c2a;border:0.5px solid rgba(255,255,255,.2);border-radius:var(--r);color:#eee;font-family:inherit;outline:none}
+.search-input:focus{border-color:var(--blue);background:#343432}
+.search-input::placeholder{color:rgba(255,255,255,.35)}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:rgba(255,255,255,.4);pointer-events:none}
+.search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:16px;color:rgba(255,255,255,.4);cursor:pointer;background:none;border:none;padding:0;line-height:1;display:none}
+.search-results{position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--bg1);border:0.5px solid var(--bdr2);border-radius:var(--rl);box-shadow:0 8px 32px rgba(0,0,0,.2);z-index:100;max-height:480px;overflow-y:auto;display:none}
+.search-results.open{display:block}
+.sr-section{padding:6px 0}
+.sr-label{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;padding:6px 12px 3px}
+.sr-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;gap:8px}
+.sr-item:hover{background:var(--bg2)}
+.sr-item-left{display:flex;align-items:center;gap:8px;min-width:0}
+.sr-item-name{font-size:13px;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sr-item-sub{font-size:11px;color:var(--t2);white-space:nowrap}
+.sr-item-right{font-size:11px;color:var(--t2);text-align:right;flex-shrink:0}
+.sr-item-cases{font-weight:600;color:var(--t1)}
+.sr-empty{padding:1.5rem;text-align:center;font-size:13px;color:var(--t2)}
+.sr-divider{height:0.5px;background:var(--bdr);margin:2px 0}
+.sr-badge{font-size:10px;padding:1px 6px;border-radius:20px;white-space:nowrap;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -179,7 +201,7 @@ let DB={uploads:[],log:[]};
 let PENDING={file:null,dist:''};
 
 // ── App state ─────────────────────────────────────────────────────
-let S={view:'overview',activeDist:null,yr:null,vm:null,modal:false,
+let S={view:'overview',activeDist:null,yr:null,vm:null,modal:false,searchQ:'',
   wh:null,cust:null,cat:null,sku:null,fWH:'All',fVendor:'All',
   tab:'cases',yoy:true,sort:{col:null,dir:1},pendingDist:''};
 let CH={};
@@ -298,6 +320,178 @@ async function loadFromServer(){
   }catch(e){console.warn('Server sync:',e.message);}
 }
 
+
+// ── Search ────────────────────────────────────────────────────────
+function runSearch(q){
+  if(!q||q.length<2)return{customers:[],products:[],warehouses:[],vendors:[]};
+  const ql=q.toLowerCase();
+  // Search across all loaded data
+  const allRows=[];
+  DB.uploads.forEach(u=>(u.rows||[]).forEach(r=>allRows.push({...r,_mo:u.month,_yr:u.year,_dist:u.distributor})));
+
+  // Customers
+  const custMap={};
+  allRows.forEach(r=>{
+    if(!r.custName||!r.custName.toLowerCase().includes(ql))return;
+    const k=r.custName+'|'+r._dist;
+    if(!custMap[k])custMap[k]={name:r.custName,dist:r._dist,whs:r.whs||'',city:r.city||'',st:r.st||'',cases:0,sales:0};
+    custMap[k].cases+=+r.qty||0;custMap[k].sales+=+r.sales||0;
+  });
+  const customers=Object.values(custMap).sort((a,b)=>b.cases-a.cases).slice(0,8);
+
+  // Products/SKUs
+  const prodMap={};
+  allRows.forEach(r=>{
+    const desc=(r.description||'').trim();
+    if(!desc||(!desc.toLowerCase().includes(ql)&&!String(r.itemno||'').includes(q)))return;
+    const k=r.itemno+'|'+r._dist;
+    if(!prodMap[k])prodMap[k]={itemno:r.itemno,desc,dist:r._dist,vendor:r.vendor||'',cases:0,sales:0};
+    prodMap[k].cases+=+r.qty||0;prodMap[k].sales+=+r.sales||0;
+  });
+  const products=Object.values(prodMap).sort((a,b)=>b.cases-a.cases).slice(0,8);
+
+  // Warehouses
+  const whMap={};
+  allRows.forEach(r=>{
+    const whs=String(r.whs||'');
+    if(!whs.toLowerCase().includes(ql))return;
+    const k=whs+'|'+r._dist;
+    if(!whMap[k])whMap[k]={whs,dist:r._dist,cases:0,sales:0};
+    whMap[k].cases+=+r.qty||0;whMap[k].sales+=+r.sales||0;
+  });
+  const warehouses=Object.values(whMap).sort((a,b)=>b.cases-a.cases).slice(0,5);
+
+  // Vendors
+  const vnMap={};
+  allRows.forEach(r=>{
+    const v=String(r.vendor||'');
+    if(!v.toLowerCase().includes(ql))return;
+    const k=v+'|'+r._dist;
+    if(!vnMap[k])vnMap[k]={vendor:v,dist:r._dist,cases:0,sales:0,skus:new Set()};
+    vnMap[k].cases+=+r.qty||0;vnMap[k].sales+=+r.sales||0;vnMap[k].skus.add(r.itemno);
+  });
+  const vendors=Object.values(vnMap).map(v=>({...v,skus:v.skus.size})).sort((a,b)=>b.cases-a.cases).slice(0,5);
+
+  return{customers,products,warehouses,vendors};
+}
+
+function renderSearchResults(q){
+  if(!q||q.length<2)return'';
+  const res=runSearch(q);
+  const total=res.customers.length+res.products.length+res.warehouses.length+res.vendors.length;
+  if(!total)return\`<div class="search-results open"><div class="sr-empty">No results for "<strong>\${q}</strong>"</div></div>\`;
+
+  let html='<div class="search-results open">';
+
+  if(res.customers.length){
+    html+=\`<div class="sr-section"><div class="sr-label">👤 Customers (\${res.customers.length})</div>\`;
+    res.customers.forEach(c=>{
+      html+=\`<div class="sr-item" data-sr-cust="\${encodeURIComponent(c.name)}" data-sr-dist="\${c.dist}" data-sr-whs="\${c.whs}">
+        <div class="sr-item-left">
+          <span class="sr-badge wh-b">WH \${c.whs}</span>
+          <div><div class="sr-item-name" title="\${c.name}">\${highlight(c.name,q)}</div>
+          <div class="sr-item-sub">\${c.dist} · \${c.city}\${c.st?' '+c.st:''}</div></div>
+        </div>
+        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(c.cases)} cases</div><div>\${fmtM(c.sales)}</div></div>
+      </div>\`;
+    });
+    html+='</div>';
+  }
+
+  if(res.products.length){
+    if(res.customers.length)html+='<div class="sr-divider"></div>';
+    html+=\`<div class="sr-section"><div class="sr-label">📦 Products (\${res.products.length})</div>\`;
+    res.products.forEach(p=>{
+      html+=\`<div class="sr-item" data-sr-sku="\${p.itemno}" data-sr-dist="\${p.dist}">
+        <div class="sr-item-left">
+          <span class="sr-badge vn-b">\${p.itemno}</span>
+          <div><div class="sr-item-name" title="\${p.desc}">\${highlight(p.desc,q)}</div>
+          <div class="sr-item-sub">\${p.dist} · Vendor \${p.vendor}</div></div>
+        </div>
+        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(p.cases)} cases</div><div>\${fmtM(p.sales)}</div></div>
+      </div>\`;
+    });
+    html+='</div>';
+  }
+
+  if(res.warehouses.length){
+    if(res.customers.length||res.products.length)html+='<div class="sr-divider"></div>';
+    html+=\`<div class="sr-section"><div class="sr-label">🏭 Warehouses</div>\`;
+    res.warehouses.forEach(w=>{
+      html+=\`<div class="sr-item" data-sr-wh="\${w.whs}" data-sr-dist="\${w.dist}">
+        <div class="sr-item-left">
+          <span class="sr-badge wh-b">WH \${w.whs}</span>
+          <div class="sr-item-sub">\${w.dist}</div>
+        </div>
+        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(w.cases)} cases</div><div>\${fmtM(w.sales)}</div></div>
+      </div>\`;
+    });
+    html+='</div>';
+  }
+
+  if(res.vendors.length){
+    if(total>res.vendors.length)html+='<div class="sr-divider"></div>';
+    html+=\`<div class="sr-section"><div class="sr-label">🏷️ Vendors</div>\`;
+    res.vendors.forEach(v=>{
+      html+=\`<div class="sr-item" data-sr-cat="\${v.vendor}" data-sr-dist="\${v.dist}">
+        <div class="sr-item-left">
+          <span class="sr-badge vn-b">\${v.vendor}</span>
+          <div class="sr-item-sub">\${v.dist} · \${v.skus} SKUs</div>
+        </div>
+        <div class="sr-item-right"><div class="sr-item-cases">\${fmtC(v.cases)} cases</div><div>\${fmtM(v.sales)}</div></div>
+      </div>\`;
+    });
+    html+='</div>';
+  }
+
+  html+='</div>';
+  return html;
+}
+
+function highlight(text,q){
+  if(!q)return text;
+  const idx=text.toLowerCase().indexOf(q.toLowerCase());
+  if(idx<0)return text;
+  return text.slice(0,idx)+'<mark style="background:rgba(37,112,200,.2);color:var(--t1);border-radius:2px">'+text.slice(idx,idx+q.length)+'</mark>'+text.slice(idx+q.length);
+}
+
+function bindSearchResults(){
+  // Customer results
+  document.querySelectorAll('[data-sr-cust]').forEach(el=>el.addEventListener('click',()=>{
+    const name=decodeURIComponent(el.dataset.srCust),dist=el.dataset.srDist,whs=el.dataset.srWhs;
+    closeSearch();
+    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('cust',{wh:whs,cust:encodeURIComponent(name)});
+  }));
+  // Product results
+  document.querySelectorAll('[data-sr-sku]').forEach(el=>el.addEventListener('click',()=>{
+    const sku=el.dataset.srSku,dist=el.dataset.srDist;
+    closeSearch();
+    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('skuAccts',{sku});
+  }));
+  // Warehouse results
+  document.querySelectorAll('[data-sr-wh]').forEach(el=>el.addEventListener('click',()=>{
+    const wh=el.dataset.srWh,dist=el.dataset.srDist;
+    closeSearch();
+    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('wh',{wh});
+  }));
+  // Vendor results
+  document.querySelectorAll('[data-sr-cat]').forEach(el=>el.addEventListener('click',()=>{
+    const cat=el.dataset.srCat,dist=el.dataset.srDist;
+    closeSearch();
+    S.activeDist=dist;const ys=getYears();S.yr=S.yr||+ys[ys.length-1];
+    go('cat',{cat});
+  }));
+}
+
+function closeSearch(){
+  S.searchQ='';
+  const inp=document.getElementById('search-input');if(inp)inp.value='';
+  const res=document.getElementById('search-results-panel');if(res)res.remove();
+}
+
 // ── Router ────────────────────────────────────────────────────────
 function go(v,ex){S.view=v;S.sort={col:null,dir:1};if(ex)Object.assign(S,ex);render();}
 function setDist(d){S.activeDist=d;S.view='overview';S.wh=null;S.cust=null;S.cat=null;S.sku=null;S.vm=null;S.sort={col:null,dir:1};S.fWH='All';S.fVendor='All';render();}
@@ -324,7 +518,13 @@ function topBarH(){
       <img src="data:image/png;base64,${LOGO_B64}" alt="Ronnoco" style="height:38px;width:auto;display:block;mix-blend-mode:screen">
       <span style="font-size:11px;color:rgba(255,255,255,.45)">${distLabel}</span>
     </div>
-    <div class="tbr">
+    <div class="tbr" style="flex:1;justify-content:flex-end">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="search-input" id="search-input" type="text" placeholder="Search customers, products, warehouses..." value="${S.searchQ||''}">
+        <button class="search-clear" id="search-clear" style="${S.searchQ?'display:block':'display:none'}">×</button>
+        <div id="search-results-panel">${S.searchQ&&S.searchQ.length>=2?renderSearchResults(S.searchQ):''}</div>
+      </div>
       ${ys.length>1?`<select id="yr-sel" style="background:#2c2c2a;color:#eee;border-color:rgba(255,255,255,.2)">${ys.map(y=>`<option${y==S.yr?' selected':''}>${y}</option>`).join('')}</select>`:''}
       <button class="btn btn-g" id="exp-btn">↓ Excel</button>
       ${AUTH.role==='admin'?'<button class="btn btn-b" id="open-modal">+ Upload</button>':'<span class="viewer-badge">👁 View Only</span>'}
@@ -755,12 +955,12 @@ function renderModal(){
       ${dists.length?`<select id="dist-quick-pick"><option value="">— pick existing —</option>${dists.map(d=>`<option value="${d}">${d}</option>`).join('')}</select>`:''}
     </div>
     <div class="slbl">Step 2 — Choose file</div>
-    <input type="file" id="fu" accept=".xlsx,.xls,.csv" multiple style="display:none">
     <div class="dz" id="dz">
       <strong>Drop your .xlsx file here</strong>
       <p>Month detected from filename: <code>01-2026_Hackney.xlsx</code></p>
-      <label class="choose-btn" for="fu" style="cursor:pointer">Choose File</label>
+      <button class="choose-btn" onclick="document.getElementById('fu-hidden').click()" type="button">Choose File</button>
     </div>
+    <input type="file" id="fu-hidden" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="[...this.files].forEach(handleFile);this.value=''">
     <div id="map-zone">${PENDING.file?renderMapper():''}</div>
     <div class="slbl">Months Loaded</div>
     <div class="mgrid">
@@ -1060,6 +1260,38 @@ function bindAll(){
   const mc=document.getElementById('modal-close');if(mc)mc.addEventListener('click',()=>{S.modal=false;PENDING.file=null;PENDING.dist='';render();});
   const mbg=document.getElementById('modal-bg');if(mbg)mbg.addEventListener('click',e=>{if(e.target===mbg){S.modal=false;PENDING.file=null;PENDING.dist='';render();}});
   // Sign out
+  // Search
+  const searchInp=document.getElementById('search-input');
+  const searchClear=document.getElementById('search-clear');
+  if(searchInp){
+    searchInp.addEventListener('input',()=>{
+      S.searchQ=searchInp.value;
+      const panel=document.getElementById('search-results-panel');
+      const clearBtn=document.getElementById('search-clear');
+      if(clearBtn)clearBtn.style.display=S.searchQ?'block':'none';
+      if(panel){
+        panel.innerHTML=S.searchQ&&S.searchQ.length>=2?renderSearchResults(S.searchQ):'';
+        if(S.searchQ&&S.searchQ.length>=2){
+          panel.querySelector('.search-results')&&bindSearchResults();
+        }
+      }
+    });
+    searchInp.addEventListener('keydown',e=>{
+      if(e.key==='Escape')closeSearch();
+    });
+  }
+  if(searchClear)searchClear.addEventListener('click',closeSearch);
+  // Close search when clicking outside
+  document.addEventListener('click',e=>{
+    const sw=document.querySelector('.search-wrap');
+    if(sw&&!sw.contains(e.target)){
+      const panel=document.getElementById('search-results-panel');
+      if(panel)panel.innerHTML='';
+    }
+  },{capture:true,once:false});
+  // Bind any existing search results
+  bindSearchResults();
+
   const sob=document.getElementById('signout-btn');if(sob)sob.addEventListener('click',()=>{clearAuth();DB={uploads:[],log:[]};try{localStorage.removeItem(SK);}catch{}renderLogin();});
   // Dist name input
   const dni=document.getElementById('dist-name-input');if(dni)dni.addEventListener('input',()=>{PENDING.dist=dni.value.trim();S.pendingDist=dni.value.trim();});
@@ -1071,7 +1303,7 @@ function bindAll(){
     dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
     dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('over');[...e.dataTransfer.files].forEach(handleFile);});
   }
-  const fu=document.getElementById('fu');if(fu)fu.addEventListener('change',e=>{[...e.target.files].forEach(handleFile);e.target.value='';});
+  // fu-hidden uses inline onchange handler
   // Pricing
   const pfu=document.getElementById('price-fu');if(pfu)pfu.addEventListener('change',e=>{ingestPricingFile(e.target.files[0]);e.target.value='';});
   document.querySelectorAll('.price-input').forEach(el=>{
