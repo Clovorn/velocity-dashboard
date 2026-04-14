@@ -20,22 +20,39 @@ function validateToken(token) {
   return null;
 }
 
-async function sbFetch(path, opts = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    ...opts,
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": "return=representation",
-      ...(opts.headers || {}),
-    },
-  });
-  if (!res.ok) {
+async function sbFetch(path, rangeStart = null, rangeEnd = null) {
+  const headers = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": `Bearer ${SUPABASE_KEY}`,
+    "Content-Type": "application/json",
+  };
+  if (rangeStart !== null) {
+    headers["Range"] = `${rangeStart}-${rangeEnd}`;
+    headers["Range-Unit"] = "items";
+    headers["Prefer"] = "count=exact";
+  }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers });
+  if (!res.ok && res.status !== 206) {
     const err = await res.text();
     throw new Error(`Supabase ${path}: ${res.status} ${err}`);
   }
   return res.json();
+}
+
+// Fetch ALL rows for a query, paginating through 1000-row pages
+async function fetchAllRows(path) {
+  const PAGE = 1000;
+  let all = [];
+  let start = 0;
+  while (true) {
+    const end = start + PAGE - 1;
+    const page = await sbFetch(path, start, end);
+    if (!page || !page.length) break;
+    all = all.concat(page);
+    if (page.length < PAGE) break; // last page
+    start += PAGE;
+  }
+  return all;
 }
 
 exports.handler = async (event) => {
@@ -52,53 +69,59 @@ exports.handler = async (event) => {
   if (!role) return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized" }) };
 
   try {
-    // Get all uploads (metadata only — fast)
+    // Get all uploads
     const uploads = await sbFetch("uploads?select=*&order=month_key.asc");
 
-    // Get recent log entries
-    const log = await sbFetch("upload_log?select=msg,ok,created_at&order=created_at.desc&limit=50");
+    // Get ALL velocity rows in one paginated fetch (much faster than per-upload)
+    const allRows = await fetchAllRows(
+      "velocity_rows?select=upload_id,whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales&order=upload_id.asc"
+    );
 
-    // For each upload, attach its rows
-    const result = await Promise.all(uploads.map(async (u) => {
-      const rows = await sbFetch(
-        `velocity_rows?upload_id=eq.${u.id}&select=whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales`
-      );
-      return {
-        id: u.id,
-        distributor: u.distributor,
-        monthKey: u.month_key,
-        month: u.month,
-        year: u.year,
-        uploadedAt: u.uploaded_at,
-        rows: rows.map(r => ({
-          whs: r.whs, custName: r.cust_name, groupName: r.group_name,
-          custNo: r.cust_no, city: r.city, st: r.st, vendor: r.vendor,
-          itemno: r.itemno, description: r.description, pack: r.pack,
-          size: r.size, qty: +r.qty, sales: +r.sales,
-        })),
-      };
+    // Group rows by upload_id
+    const rowsByUpload = {};
+    allRows.forEach(r => {
+      if (!rowsByUpload[r.upload_id]) rowsByUpload[r.upload_id] = [];
+      rowsByUpload[r.upload_id].push({
+        whs: r.whs, custName: r.cust_name, groupName: r.group_name,
+        custNo: r.cust_no, city: r.city, st: r.st, vendor: r.vendor,
+        itemno: r.itemno, description: r.description, pack: r.pack,
+        size: r.size, qty: +r.qty, sales: +r.sales,
+      });
+    });
+
+    // Attach rows to uploads
+    const result = uploads.map(u => ({
+      id: u.id,
+      distributor: u.distributor,
+      monthKey: u.month_key,
+      month: u.month,
+      year: u.year,
+      uploadedAt: u.uploaded_at,
+      rows: rowsByUpload[u.id] || [],
     }));
+
+    // Get log
+    const log = await sbFetch("upload_log?select=msg,ok,created_at&order=created_at.desc&limit=50");
 
     // Get pricing
     const pricing = await sbFetch("pricing?select=distributor,itemno,sell_price,fee_flat,fee_pct,description");
     const pricingMap = {};
-    pricing.forEach(p => {
-      if (!pricingMap[p.distributor]) pricingMap[p.distributor] = {};
-      pricingMap[p.distributor][p.itemno] = {
-        sellPrice: +p.sell_price, feeFlat: +p.fee_flat,
-        feePct: +p.fee_pct, description: p.description,
-      };
-    });
+    if (pricing && pricing.length) {
+      pricing.forEach(p => {
+        if (!pricingMap[p.distributor]) pricingMap[p.distributor] = {};
+        pricingMap[p.distributor][p.itemno] = {
+          sellPrice: +p.sell_price, feeFlat: +p.fee_flat,
+          feePct: +p.fee_pct, description: p.description,
+        };
+      });
+    }
+
+    console.log(`data.js: ${uploads.length} uploads, ${allRows.length} total rows`);
 
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({
-        uploads: result,
-        log: log.map(l => ({ msg: l.msg, ok: l.ok, at: l.created_at })),
-        pricing: pricingMap,
-        role,
-      }),
+      body: JSON.stringify({ uploads: result, log: log ? log.map(l => ({ msg: l.msg, ok: l.ok, at: l.created_at })) : [], pricing: pricingMap, role }),
     };
   } catch (error) {
     console.error("data.js error:", error.message);
