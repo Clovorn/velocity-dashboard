@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -281,13 +280,12 @@ function computeGP(rows,dist){
 
 // ── Storage (Supabase via functions) ──────────────────────────────
 async function saveRec(rec){
-  try{localStorage.setItem(SK,JSON.stringify({uploads:DB.uploads.map(u=>({...u,rows:[]})),log:DB.log}));}catch{}
+  // Save to Supabase — source of truth
   const r=await fetch('/api/save-upload',{method:'POST',headers:authHeaders(),body:JSON.stringify(rec),signal:AbortSignal.timeout(120000)});
   if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||'Save failed '+r.status);}
   return r.json();
 }
 async function delRec(monthKey,distributor){
-  try{localStorage.setItem(SK,JSON.stringify({uploads:DB.uploads.map(u=>({...u,rows:[]})),log:DB.log}));}catch{}
   try{await fetch('/api/delete',{method:'POST',headers:authHeaders(),body:JSON.stringify({monthKey,distributor})});}catch{}
 }
 async function delAll(){
@@ -303,15 +301,8 @@ async function loadFromServer(){
     if(r.ok){
       const d=await r.json();
       if(d.uploads){
-        // Merge server uploads with local — keep local rows when available
-        const localMap={};
-        DB.uploads.forEach(u=>{localMap[u.distributor+'|'+u.monthKey]=u;});
-        DB.uploads=d.uploads.map(u=>{
-          const key=(u.distributor||'Hackney')+'|'+u.monthKey;
-          const local=localMap[key];
-          // Keep local rows if we have them (they're full), otherwise use server rows
-          return{...u,distributor:u.distributor||'Hackney',rows:(local&&local.rows&&local.rows.length)?local.rows:(u.rows||[])};
-        });
+        // Server is source of truth — always use server data
+        DB.uploads=d.uploads.map(u=>({...u,distributor:u.distributor||'Hackney',rows:u.rows||[]}));
         DB.log=d.log||[];
       }
       if(d.role&&!AUTH.role)AUTH.role=d.role;  // only set role if not already set
@@ -1306,7 +1297,13 @@ function bindAll(){
 async function boot(){
   loadAuth();loadPrices();
   if(!AUTH.token){renderLogin();return;}
-  render();
+  // Show loading spinner — never render stale localStorage data
+  document.getElementById('root').innerHTML=
+    '<div style="position:fixed;top:0;left:0;width:100%;height:100%;background:#1a1a18;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:400">'
+    +'<img src="data:image/png;base64,'+LOGO_B64+'" alt="Ronnoco" style="height:48px;width:auto;mix-blend-mode:screen;opacity:.9">'
+    +'<div style="display:flex;align-items:center;gap:10px;color:rgba(255,255,255,.6);font-size:14px"><div class="spin"></div>Loading dashboard...</div>'
+    +'</div>';
+  // Always load fresh from Supabase — it is the source of truth
   await loadFromServer();
   render();
 }
