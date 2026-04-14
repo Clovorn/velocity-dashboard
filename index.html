@@ -76,10 +76,10 @@ tr:last-child td{border-bottom:none}tr.dr:hover td{background:var(--bg2);cursor:
 .bbtn:hover{background:var(--bluebg);border-color:var(--blue)}
 .dh-name{font-size:15px;font-weight:700;color:var(--t1)}.dh-sub{font-size:11px;color:var(--t2);margin-top:2px}
 .modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:200;padding:28px 16px;overflow-y:auto}
-.modal{background:var(--bg1);border:0.5px solid var(--bdr2);border-radius:var(--rl);width:min(720px,100%)}
+.modal{background:var(--bg1);border:0.5px solid var(--bdr2);border-radius:var(--rl);width:min(720px,100%);overflow:visible}
 .mhdr{display:flex;align-items:center;justify-content:space-between;padding:.875rem 1.25rem;border-bottom:0.5px solid var(--bdr)}
 .mtitle{font-size:14px;font-weight:700;color:var(--t1)}.mclose{font-size:22px;cursor:pointer;color:var(--t2);background:none;border:none;padding:0 4px;line-height:1}
-.mbody{padding:1.25rem;max-height:80vh;overflow-y:auto}
+.mbody{padding:1.25rem;max-height:80vh;overflow-y:auto;overflow-x:visible}
 .slbl{font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;margin:1rem 0 .5rem}
 .dz{border:2px dashed var(--bdr2);border-radius:var(--rl);padding:2rem;text-align:center;transition:background .15s;cursor:default}
 .dz.over{background:var(--bg2);border-color:var(--blue)}.dz strong{font-size:14px;font-weight:600;color:var(--t1)}.dz p{font-size:12px;color:var(--t2);margin-top:6px;line-height:1.7}
@@ -88,7 +88,7 @@ tr:last-child td{border-bottom:none}tr.dr:hover td{background:var(--bg2);cursor:
 .dist-input-row input{flex:1;min-width:180px;padding:7px 10px;font-size:13px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)}
 .choose-btn{display:inline-block;padding:8px 20px;background:var(--blue);color:#fff;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;border:none;margin-top:.875rem}
 .choose-btn:hover{opacity:.9}
-.mapper{background:var(--bg2);border:0.5px solid var(--bdr);border-radius:var(--r);padding:1rem;margin-top:.875rem}
+.mapper{background:var(--bg2);border:0.5px solid var(--bdr);border-radius:var(--r);padding:1rem;margin-top:.875rem;position:relative;z-index:250}
 .mapper-title{font-size:13px;font-weight:700;color:var(--t1);margin-bottom:.5rem}
 .mapper-sub{font-size:11px;color:var(--t2);margin-bottom:.875rem}
 .mapper-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -1000,14 +1000,14 @@ function renderMapper(){
     {key:'vendor',label:'Vendor/Brand'},{key:'itemno',label:'Item/SKU #',req:true},
     {key:'description',label:'Description',req:true},{key:'qty',label:'Cases / Qty',req:true},
     {key:'sales',label:'Revenue / Sales $'},{key:'pack',label:'Pack'},{key:'size',label:'Size'}];
-  const selOpts=(key)=>opts.replace(`value="${auto[key]}"`,`value="${auto[key]}" selected`);
+  const selOpts=(key,k)=>{const v=auto[k!==undefined?k:key];return v!==''?opts.replace('value="'+v+'"','value="'+v+'" selected'):opts;};
   return`<div class="mapper">
     <div class="mapper-title">Step 3 — Map columns</div>
     <div class="mapper-sub">Match each field to the correct column in your file. Required fields marked *</div>
     <div class="mapper-grid">
       ${fields.map(f=>`<div class="mapper-row${f.req?' required':''}">
         <label>${f.label}</label>
-        <select id="map-${f.key}">${selOpts(f.key)}</select>
+        <select id="map-${f.key}">${selOpts(f.key,f.key)}</select>
       </div>`).join('')}
     </div>
     <div class="mapper-actions">
