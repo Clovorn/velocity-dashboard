@@ -20,39 +20,57 @@ function validateToken(token) {
   return null;
 }
 
-async function sbFetch(path, rangeStart = null, rangeEnd = null) {
-  const headers = {
-    "apikey": SUPABASE_KEY,
-    "Authorization": `Bearer ${SUPABASE_KEY}`,
-    "Content-Type": "application/json",
-  };
-  if (rangeStart !== null) {
-    headers["Range"] = `${rangeStart}-${rangeEnd}`;
-    headers["Range-Unit"] = "items";
-    headers["Prefer"] = "count=exact";
-  }
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { headers });
-  if (!res.ok && res.status !== 206) {
+// Fetch a single page from Supabase using Range header
+async function sbPage(path, from, to) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Range-Unit": "items",
+      "Range": `${from}-${to}`,
+    },
+  });
+  // 200 = full result, 206 = partial (more pages exist)
+  if (res.status !== 200 && res.status !== 206) {
     const err = await res.text();
-    throw new Error(`Supabase ${path}: ${res.status} ${err}`);
+    throw new Error(`Supabase ${path} [${from}-${to}]: ${res.status} ${err}`);
   }
-  return res.json();
+  const data = await res.json();
+  const hasMore = res.status === 206;
+  return { data, hasMore };
 }
 
-// Fetch ALL rows for a query, paginating through 1000-row pages
-async function fetchAllRows(path) {
-  const PAGE = 1000;
+// Fetch ALL rows by paginating with Range header
+async function fetchAll(path, pageSize = 5000) {
   let all = [];
-  let start = 0;
+  let from = 0;
   while (true) {
-    const end = start + PAGE - 1;
-    const page = await sbFetch(path, start, end);
-    if (!page || !page.length) break;
-    all = all.concat(page);
-    if (page.length < PAGE) break; // last page
-    start += PAGE;
+    const to = from + pageSize - 1;
+    const { data, hasMore } = await sbPage(path, from, to);
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    console.log(`fetchAll ${path.split('?')[0]}: got ${data.length} (total ${all.length}) hasMore=${hasMore}`);
+    if (!hasMore) break;
+    from += pageSize;
   }
   return all;
+}
+
+// Simple fetch (for small tables)
+async function sbGet(path) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase GET ${path}: ${res.status} ${err}`);
+  }
+  return res.json();
 }
 
 exports.handler = async (event) => {
@@ -69,13 +87,16 @@ exports.handler = async (event) => {
   if (!role) return { statusCode: 401, headers, body: JSON.stringify({ error: "Unauthorized" }) };
 
   try {
-    // Get all uploads
-    const uploads = await sbFetch("uploads?select=*&order=month_key.asc");
+    // Get uploads metadata
+    const uploads = await sbGet("uploads?select=*&order=month_key.asc");
+    console.log(`data.js: ${uploads.length} uploads`);
 
-    // Get ALL velocity rows in one paginated fetch (much faster than per-upload)
-    const allRows = await fetchAllRows(
-      "velocity_rows?select=upload_id,whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales&order=upload_id.asc"
+    // Fetch ALL velocity rows with pagination
+    const allRows = await fetchAll(
+      "velocity_rows?select=upload_id,whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales&order=id.asc",
+      5000
     );
+    console.log(`data.js: ${allRows.length} total rows`);
 
     // Group rows by upload_id
     const rowsByUpload = {};
@@ -90,24 +111,27 @@ exports.handler = async (event) => {
     });
 
     // Attach rows to uploads
-    const result = uploads.map(u => ({
-      id: u.id,
-      distributor: u.distributor,
-      monthKey: u.month_key,
-      month: u.month,
-      year: u.year,
-      uploadedAt: u.uploaded_at,
-      rows: rowsByUpload[u.id] || [],
-    }));
+    const result = uploads.map(u => {
+      const rows = rowsByUpload[u.id] || [];
+      console.log(`  ${u.distributor} ${u.month_key}: ${rows.length} rows`);
+      return {
+        id: u.id,
+        distributor: u.distributor,
+        monthKey: u.month_key,
+        month: u.month,
+        year: u.year,
+        uploadedAt: u.uploaded_at,
+        rows,
+      };
+    });
 
-    // Get log
-    const log = await sbFetch("upload_log?select=msg,ok,created_at&order=created_at.desc&limit=50");
+    // Get log + pricing (small tables, no pagination needed)
+    const log = await sbGet("upload_log?select=msg,ok,created_at&order=created_at.desc&limit=50");
+    const pricingRows = await sbGet("pricing?select=distributor,itemno,sell_price,fee_flat,fee_pct,description");
 
-    // Get pricing
-    const pricing = await sbFetch("pricing?select=distributor,itemno,sell_price,fee_flat,fee_pct,description");
     const pricingMap = {};
-    if (pricing && pricing.length) {
-      pricing.forEach(p => {
+    if (Array.isArray(pricingRows)) {
+      pricingRows.forEach(p => {
         if (!pricingMap[p.distributor]) pricingMap[p.distributor] = {};
         pricingMap[p.distributor][p.itemno] = {
           sellPrice: +p.sell_price, feeFlat: +p.fee_flat,
@@ -116,12 +140,15 @@ exports.handler = async (event) => {
       });
     }
 
-    console.log(`data.js: ${uploads.length} uploads, ${allRows.length} total rows`);
-
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ uploads: result, log: log ? log.map(l => ({ msg: l.msg, ok: l.ok, at: l.created_at })) : [], pricing: pricingMap, role }),
+      body: JSON.stringify({
+        uploads: result,
+        log: Array.isArray(log) ? log.map(l => ({ msg: l.msg, ok: l.ok, at: l.created_at })) : [],
+        pricing: pricingMap,
+        role,
+      }),
     };
   } catch (error) {
     console.error("data.js error:", error.message);
