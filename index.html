@@ -166,6 +166,23 @@ code{font-family:monospace;background:var(--bg2);padding:1px 5px;border-radius:4
 .sr-empty{padding:1.5rem;text-align:center;font-size:13px;color:var(--t2)}
 .sr-divider{height:0.5px;background:var(--bdr);margin:2px 0}
 .sr-badge{font-size:10px;padding:1px 6px;border-radius:20px;white-space:nowrap;flex-shrink:0}
+
+/* ── Danger confirmation modal ── */
+.danger-modal-bg{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:600;padding:1rem}
+.danger-modal{background:var(--bg1);border:2px solid var(--redt);border-radius:var(--rl);padding:2rem;width:min(420px,100%);text-align:center}
+.danger-modal-icon{font-size:48px;margin-bottom:1rem}
+.danger-modal-title{font-size:18px;font-weight:700;color:var(--redt);margin-bottom:.5rem}
+.danger-modal-msg{font-size:13px;color:var(--t2);margin-bottom:1.25rem;line-height:1.6}
+.danger-modal-confirm{font-size:13px;color:var(--t2);margin-bottom:.5rem}
+.danger-modal-input{width:100%;padding:8px 12px;font-size:14px;border:1.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1);text-align:center;font-family:inherit;margin-bottom:1rem;letter-spacing:.05em}
+.danger-modal-input:focus{outline:none;border-color:var(--redt)}
+.danger-modal-input.match{border-color:var(--greent)}
+.danger-btns{display:flex;gap:8px;justify-content:center}
+.danger-btn-cancel{padding:8px 20px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1);cursor:pointer;font-size:13px;font-family:inherit}
+.danger-btn-cancel:hover{background:var(--bg2)}
+.danger-btn-confirm{padding:8px 20px;border:none;border-radius:var(--r);background:var(--redt);color:#fff;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;opacity:.4;pointer-events:none}
+.danger-btn-confirm.active{opacity:1;pointer-events:auto}
+.danger-btn-confirm.active:hover{opacity:.85}
 </style>
 </head>
 <body>
@@ -224,6 +241,27 @@ function getRows(yr,dist){
   let ups=DB.uploads.filter(u=>u.year==yr);
   if(dist)ups=ups.filter(u=>u.distributor===dist);
   if(S.vm)ups=ups.filter(u=>u.monthKey===S.vm);
+  const rows=[];
+  ups.forEach(u=>(u.rows||[]).forEach(r=>rows.push({...r,_mo:u.month,_yr:u.year,_dist:u.distributor})));
+  return rows;
+}
+
+// Get prior year rows filtered to only months that exist in current year
+// This ensures YOY comparison is apples-to-apples (same months only)
+function getPriorRows(curYr,prYr,dist){
+  if(!prYr)return[];
+  // Get which months exist in current year
+  const curMonths=new Set(
+    DB.uploads.filter(u=>u.year==curYr&&(!dist||u.distributor===dist))
+      .map(u=>u.month)
+  );
+  // Only get prior year rows for those same months
+  let ups=DB.uploads.filter(u=>u.year==prYr&&(!dist||u.distributor===dist)&&curMonths.has(u.month));
+  if(S.vm){
+    // If a specific month is selected, filter both years to that month
+    const vm_mo=S.vm?parseInt(S.vm.split('-')[1])-1:null;
+    if(vm_mo!==null)ups=ups.filter(u=>u.month===vm_mo);
+  }
   const rows=[];
   ups.forEach(u=>(u.rows||[]).forEach(r=>rows.push({...r,_mo:u.month,_yr:u.year,_dist:u.distributor})));
   return rows;
@@ -642,7 +680,7 @@ function renderUploadPage(){
 
   let monthGrid=cells.map(function(c){
     return'<div class="mcell '+(c.loaded?'loaded':'missing')+'">'
-      +(c.loaded?'<button class="mcdel" data-del="'+c.k+'">×</button>':'')
+      +(c.loaded&&AUTH.role==='admin'?'<button class="mcdel" data-del="'+c.k+'">×</button>':'')
       +'<div class="mm">'+c.m+' '+yr+'</div>'
       +(c.loaded?'<div class="ms">'+fmtC(c.loaded.cases)+' cases</div>':'<div class="ms" style="color:var(--t3)">not loaded</div>')
       +'</div>';
@@ -704,13 +742,59 @@ function renderUploadPage(){
 }
 
 
+
+// ── Danger confirmation ───────────────────────────────────────────
+function dangerConfirm({title, message, confirmWord, onConfirm}){
+  // Remove any existing danger modal
+  const existing=document.getElementById('danger-modal-bg');
+  if(existing)existing.remove();
+
+  const div=document.createElement('div');
+  div.id='danger-modal-bg';
+  div.className='danger-modal-bg';
+  div.innerHTML=`
+    <div class="danger-modal">
+      <div class="danger-modal-icon">⚠️</div>
+      <div class="danger-modal-title">${title}</div>
+      <div class="danger-modal-msg">${message}</div>
+      <div class="danger-modal-confirm">Type <strong>${confirmWord}</strong> to confirm:</div>
+      <input class="danger-modal-input" id="danger-input" type="text" placeholder="${confirmWord}" autocomplete="off" spellcheck="false">
+      <div class="danger-btns">
+        <button class="danger-btn-cancel" id="danger-cancel">Cancel</button>
+        <button class="danger-btn-confirm" id="danger-confirm">Delete</button>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+
+  const input=document.getElementById('danger-input');
+  const btn=document.getElementById('danger-confirm');
+  const cancel=document.getElementById('danger-cancel');
+
+  input.addEventListener('input',()=>{
+    const match=input.value.trim().toUpperCase()===confirmWord.toUpperCase();
+    input.classList.toggle('match',match);
+    btn.classList.toggle('active',match);
+  });
+
+  btn.addEventListener('click',()=>{
+    if(input.value.trim().toUpperCase()===confirmWord.toUpperCase()){
+      div.remove();
+      onConfirm();
+    }
+  });
+
+  cancel.addEventListener('click',()=>div.remove());
+  div.addEventListener('click',e=>{if(e.target===div)div.remove();});
+  setTimeout(()=>input.focus(),100);
+}
+
 function renderCombined(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dists=getDistributors();
-  const allCur=filt(getRows(S.yr,null)),allPri=prYr?filt(getRows(prYr,null)):[];
+  const allCur=filt(getRows(S.yr,null)),allPri=prYr?filt(getPriorRows(S.yr,prYr,null)):[];
   const totC=sa(allCur.map(r=>+r.qty||0)),totR=sa(allCur.map(r=>+r.sales||0));
   const pTotC=sa(allPri.map(r=>+r.qty||0)),pTotR=sa(allPri.map(r=>+r.sales||0));
   const distData=dists.map((d,i)=>{
-    const cur=filt(getRows(S.yr,d)),pri=prYr?filt(getRows(prYr,d)):[];
+    const cur=filt(getRows(S.yr,d)),pri=prYr?filt(getPriorRows(S.yr,prYr,d)):[];
     return{name:d,color:DIST_COLORS[i%DIST_COLORS.length],
       cases:sa(cur.map(r=>+r.qty||0)),rev:sa(cur.map(r=>+r.sales||0)),
       accts:new Set(cur.map(r=>r.custName)).size,skus:new Set(cur.map(r=>r.itemno)).size,
@@ -751,7 +835,7 @@ function renderCombined(){
 
 function renderOverview(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dist=S.activeDist;
-  const all=getRows(S.yr,dist),cur=filt(all),pri=prYr?filt(getRows(prYr,dist)):[];
+  const all=getRows(S.yr,dist),cur=filt(all),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)):[];
   let whs=rollup(cur,r=>String(r.whs||'')),pWhs=rollup(pri,r=>String(r.whs||''));
   let vns=rollup(cur,r=>String(r.vendor||'')),pVns=rollup(pri,r=>String(r.vendor||''));
   if(S.sort.col){whs=sortRows(whs,S.sort.col,S.sort.dir);vns=sortRows(vns,S.sort.col,S.sort.dir);}
@@ -785,7 +869,7 @@ function renderOverview(){
 function renderWH(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dist=S.activeDist;
   const all=getRows(S.yr,dist),cur=filt(all).filter(r=>String(r.whs||'')===S.wh);
-  const pri=prYr?filt(getRows(prYr,dist)).filter(r=>String(r.whs||'')===S.wh):[];
+  const pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(r=>String(r.whs||'')===S.wh):[];
   const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0)),pTotC=sa(pri.map(r=>+r.qty||0));
   let custs=rollup(cur,r=>r.custName),pCusts=rollup(pri,r=>r.custName);
   if(S.sort.col)custs=sortRows(custs.map(c=>{const ref=cur.find(r=>r.custName===c.key)||{};return{...c,city:ref.city||'',st:ref.st||'',groupName:ref.groupName||''};}),S.sort.col,S.sort.dir);
@@ -823,7 +907,7 @@ function renderCust(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dist=S.activeDist;
   const name=decodeURIComponent(S.cust);
   const all=getRows(S.yr,dist),cur=filt(all).filter(r=>r.custName===name);
-  const pri=prYr?filt(getRows(prYr,dist)).filter(r=>r.custName===name):[];
+  const pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(r=>r.custName===name):[];
   if(!cur.length)return renderOverview();
   const ref=cur[0],totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
   const pTotC=sa(pri.map(r=>+r.qty||0)),pTotR=sa(pri.map(r=>+r.sales||0));
@@ -893,7 +977,7 @@ function renderCust(){
 function renderCat(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dist=S.activeDist;
   const all=getRows(S.yr,dist),cur=filt(all).filter(r=>String(r.vendor||'')===S.cat);
-  const pri=prYr?filt(getRows(prYr,dist)).filter(r=>String(r.vendor||'')===S.cat):[];
+  const pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(r=>String(r.vendor||'')===S.cat):[];
   const totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0)),pTotC=sa(pri.map(r=>+r.qty||0));
   let skus=rollup(cur,r=>r.itemno+'§'+(r.description||'').trim());
   const pSkus=rollup(pri,r=>r.itemno+'§'+(r.description||'').trim());
@@ -927,7 +1011,7 @@ function renderCat(){
 function renderSKUAccts(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dist=S.activeDist;
   const all=getRows(S.yr,dist),cur=filt(all).filter(r=>String(r.itemno)===String(S.sku));
-  const pri=prYr?filt(getRows(prYr,dist)).filter(r=>String(r.itemno)===String(S.sku)):[];
+  const pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(r=>String(r.itemno)===String(S.sku)):[];
   if(!cur.length)return renderOverview();
   const ref=cur[0],totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0)),pTotC=sa(pri.map(r=>+r.qty||0));
   let accts=rollup(cur,r=>r.custName),pAccts=rollup(pri,r=>r.custName);
@@ -1094,11 +1178,11 @@ function renderCharts(){
     if(leg)leg.innerHTML=datasets.map(d=>`<span><span class="lsq" style="background:${d.borderColor}"></span>${d.label}</span>`).join('');
     CH['ch-combined']=new Chart(el.getContext('2d'),{data:{labels:MO,datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{size:11},autoSkip:false}},y:{beginAtZero:true,stacked:true,ticks:{font:{size:11}}}}}});
   }
-  if(S.view==='overview'){const cur=filt(getRows(S.yr,dist)),pri=prYr?filt(getRows(prYr,dist)):null;buildChart('ch-ov','leg-ov',cur,pri,prLbl,dc2);}
-  if(S.view==='wh'){const f=r=>String(r.whs||'')===S.wh;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getRows(prYr,dist)).filter(f):null;buildChart('ch-wh','leg-wh',cur,pri,prLbl,dc2);}
-  if(S.view==='cust'&&S.cust){const name=decodeURIComponent(S.cust),f=r=>r.custName===name;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getRows(prYr,dist)).filter(f):null;buildChart('ch-cust','leg-cust',cur,pri,prLbl,dc2);}
-  if(S.view==='cat'&&S.cat){const f=r=>String(r.vendor||'')===S.cat;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getRows(prYr,dist)).filter(f):null;buildChart('ch-cat','leg-cat',cur,pri,prLbl,dc2);}
-  if(S.view==='skuAccts'&&S.sku){const f=r=>String(r.itemno)===String(S.sku);const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getRows(prYr,dist)).filter(f):null;buildChart('ch-sku','leg-sku',cur,pri,prLbl,dc2);}
+  if(S.view==='overview'){const cur=filt(getRows(S.yr,dist)),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)):null;buildChart('ch-ov','leg-ov',cur,pri,prLbl,dc2);}
+  if(S.view==='wh'){const f=r=>String(r.whs||'')===S.wh;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(f):null;buildChart('ch-wh','leg-wh',cur,pri,prLbl,dc2);}
+  if(S.view==='cust'&&S.cust){const name=decodeURIComponent(S.cust),f=r=>r.custName===name;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(f):null;buildChart('ch-cust','leg-cust',cur,pri,prLbl,dc2);}
+  if(S.view==='cat'&&S.cat){const f=r=>String(r.vendor||'')===S.cat;const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(f):null;buildChart('ch-cat','leg-cat',cur,pri,prLbl,dc2);}
+  if(S.view==='skuAccts'&&S.sku){const f=r=>String(r.itemno)===String(S.sku);const cur=filt(getRows(S.yr,dist)).filter(f),pri=prYr?filt(getPriorRows(S.yr,prYr,dist)).filter(f):null;buildChart('ch-sku','leg-sku',cur,pri,prLbl,dc2);}
 }
 
 // ── Modal ─────────────────────────────────────────────────────────
@@ -1128,7 +1212,7 @@ function renderModal(){
     <div class="slbl">Months Loaded</div>
     <div class="mgrid">
     ${cells.map(c=>`<div class="mcell ${c.loaded?'loaded':'missing'}">
-      ${c.loaded?`<button class="mcdel" data-del="${c.k}">×</button>`:''}
+      ${c.loaded&&AUTH.role==='admin'?`<button class="mcdel" data-del="${c.k}">×</button>`:''}
       <div class="mm">${c.m} ${yr}</div>
       ${c.loaded?`<div class="ms">${fmtC(c.loaded.cases)} cases</div>`:`<div class="ms" style="color:var(--t3)">not loaded</div>`}
     </div>`).join('')}
@@ -1377,7 +1461,7 @@ function exportPricing(){
 function doExport(){
   const dist=S.activeDist,cur=filt(getRows(S.yr,dist));
   if(!cur.length){toast('No data to export','err');return;}
-  const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],pri=prYr?filt(getRows(prYr,dist)):[];
+  const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],pri=prYr?filt(getPriorRows(S.yr,prYr,dist)):[];
   const wb=XLSX.utils.book_new(),totC=sa(cur.map(r=>+r.qty||0)),totR=sa(cur.map(r=>+r.sales||0));
   const sr=[['Velocity Report'],[`${dist||'All'} · ${S.yr} · ${S.vm||'YTD'}`],[],
     ['Metric',S.yr,'Prior Year'],['Total Cases',totC,sa(pri.map(r=>+r.qty||0))],
@@ -1498,22 +1582,42 @@ function bindAll(){
   const epb=document.getElementById('export-pricing-btn');if(epb)epb.addEventListener('click',exportPricing);
   const cpb=document.getElementById('clear-pricing-btn');if(cpb)cpb.addEventListener('click',()=>{
     const dist=S.activeDist;if(!dist)return;
-    if(confirm('Clear all pricing for '+dist+'?')){delete PRICES[dist];savePrices();render();toast('Pricing cleared');}
+    const count=PRICES[dist]?Object.keys(PRICES[dist]).length:0;
+    dangerConfirm({
+      title:'Clear Pricing',
+      message:`This will remove all <strong>${count} SKU prices</strong> for <strong>${dist}</strong>.<br><br>GP calculations will stop working until pricing is re-entered.`,
+      confirmWord:'CLEAR',
+      onConfirm:()=>{delete PRICES[dist];savePrices();render();toast('Pricing cleared for '+dist);}
+    });
   });
   // Delete month
   document.querySelectorAll('[data-del]').forEach(el=>el.addEventListener('click',async e=>{
     e.stopPropagation();const k=el.dataset.del;
-    if(confirm(`Remove ${k}? Cannot be undone.`)){
-      DB.uploads=DB.uploads.filter(u=>u.monthKey!==k);
-      await delRec(k,null);if(S.vm===k)S.vm=null;render();toast('Month removed');
-    }
+    const upload=DB.uploads.find(u=>u.monthKey===k);
+    const distName=upload?upload.distributor:'';
+    dangerConfirm({
+      title:'Delete Month Data',
+      message:`This will permanently delete <strong>${k}</strong> (${distName}) from the database.<br><br>This cannot be undone. All ${upload?fmtC(upload.rows?upload.rows.length:0)+' rows of ':''} data for this month will be lost.`,
+      confirmWord:'DELETE',
+      onConfirm:async()=>{
+        DB.uploads=DB.uploads.filter(u=>u.monthKey!==k);
+        await delRec(k,null);if(S.vm===k)S.vm=null;render();toast('Month deleted');
+      }
+    });
   }));
   // Clear all
   const ca=document.getElementById('clear-all-btn');
   if(ca)ca.addEventListener('click',async()=>{
-    if(confirm('Clear ALL data? Cannot be undone.')){
-      await delAll();DB={uploads:[],log:[]};S.yr=null;S.activeDist=null;S.view='combined';S.modal=false;render();toast('All data cleared');
-    }
+    const totalMonths=DB.uploads.length;
+    const totalRows=DB.uploads.reduce((s,u)=>s+(u.rows?u.rows.length:0),0);
+    dangerConfirm({
+      title:'Delete ALL Data',
+      message:`This will permanently delete <strong>all ${totalMonths} months</strong> of velocity data (${fmtC(totalRows)} total rows) from the database.<br><br><strong>This action is irreversible.</strong> All distributor data, all months, all history will be gone forever.`,
+      confirmWord:'DELETE ALL',
+      onConfirm:async()=>{
+        await delAll();DB={uploads:[],log:[]};S.yr=null;S.activeDist=null;S.view='combined';render();toast('All data deleted');
+      }
+    });
   });
 }
 
