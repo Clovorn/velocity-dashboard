@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -960,7 +959,7 @@ function renderModal(){
     <div class="slbl">Step 1 — Distributor name</div>
     <div class="dist-input-row">
       <label>Name:</label>
-      <input type="text" id="dist-name-input" placeholder="e.g. Hackney, RNDC, Southern Glazers..." value="${PENDING.dist||S.pendingDist||''}">
+      <input type="text" id="dist-name-input" placeholder="e.g. Hackney, RNDC, Southern Glazers..." value="${PENDING.dist||S.pendingDist||''}" oninput="PENDING.dist=this.value.trim();S.pendingDist=this.value.trim()">
       ${dists.length?`<select id="dist-quick-pick"><option value="">— pick existing —</option>${dists.map(d=>`<option value="${d}">${d}</option>`).join('')}</select>`:''}
     </div>
     <div class="slbl">Step 2 — Choose file</div>
@@ -1075,7 +1074,7 @@ function detectMonth(fname){
 
 function handleFile(file){
   const distInput=document.getElementById('dist-name-input');
-  const distName=(distInput?distInput.value:'').trim();
+  const distName=(distInput?distInput.value:'').trim()||PENDING.dist||'';
   if(!distName){toast('Please enter a distributor name first','err');if(distInput)distInput.focus();return;}
   PENDING.dist=distName;S.pendingDist=distName;
   toast('Reading file...');
