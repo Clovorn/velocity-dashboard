@@ -197,7 +197,7 @@ function savePrices(){try{localStorage.setItem(SK_PRICE,JSON.stringify(PRICES));
 let DB={uploads:[],log:[]};
 
 // ── Pending file state (outside S so render never clears it) ──────
-let PENDING={file:null,dist:''};
+let PENDING={file:null,dist:'',month:null,year:2026};
 
 // ── App state ─────────────────────────────────────────────────────
 let S={view:'overview',activeDist:null,yr:null,vm:null,modal:false,searchQ:'',
@@ -307,18 +307,21 @@ async function sbDirect(path){
 }
 
 async function sbAllRows(path){
-  const PAGE=5000;let all=[],from=0;
+  const PAGE=1000;
+  let all=[],offset=0;
+  const sep=path.includes('?')?'&':'?';
   while(true){
-    const to=from+PAGE-1;
-    const res=await fetch(SB_URL+'/rest/v1/'+path,{
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,
-        'Content-Type':'application/json','Range-Unit':'items','Range':from+'-'+to}
+    const url=SB_URL+'/rest/v1/'+path+sep+'limit='+PAGE+'&offset='+offset;
+    const res=await fetch(url,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}
     });
+    if(!res.ok){console.error('sbAllRows error:',res.status);break;}
     const page=await res.json();
-    if(!page||!page.length)break;
+    if(!Array.isArray(page)||page.length===0)break;
     all=all.concat(page);
-    if(res.status===200)break;
-    from+=PAGE;
+    console.log('Rows loaded:',all.length);
+    if(page.length<PAGE)break;
+    offset+=PAGE;
   }
   return all;
 }
@@ -517,7 +520,10 @@ function setDist(d){S.activeDist=d;S.view='overview';S.wh=null;S.cust=null;S.cat
 // ── Render ────────────────────────────────────────────────────────
 function render(){
   const ys=getYears();
-  if(!S.yr||!ys.includes(+S.yr))S.yr=ys.length?+ys[ys.length-1]:null;
+  if(!S.yr||!ys.includes(+S.yr)){
+    // Prefer 2026, otherwise use latest year
+    S.yr=ys.includes(2026)?2026:(ys.length?+ys[ys.length-1]:null);
+  }
   if(S.vm&&!getLM(S.yr||0,S.activeDist).find(m=>m.k===S.vm))S.vm=null;
   const root=document.getElementById('root');
   if(!S.yr&&S.view!=='upload'){root.innerHTML=renderEmpty();bindAll();return;}
@@ -544,6 +550,7 @@ function topBarH(){
         <div id="search-results-panel">${S.searchQ&&S.searchQ.length>=2?renderSearchResults(S.searchQ):''}</div>
       </div>
       ${ys.length>1?`<select id="yr-sel" style="background:#2c2c2a;color:#eee;border-color:rgba(255,255,255,.2)">${ys.map(y=>`<option${y==S.yr?' selected':''}>${y}</option>`).join('')}</select>`:''}
+      ${ys.length>1&&ys.indexOf(+S.yr)>0?`<span style="font-size:11px;color:rgba(255,255,255,.4)">vs ${ys[ys.indexOf(+S.yr)-1]}</span>`:''}
       <button class="btn btn-g" id="exp-btn">↓ Excel</button>
       ${AUTH.role==='admin'?'<button class="btn btn-b" id="open-modal">+ Upload</button>':'<span class="viewer-badge">👁 View Only</span>'}
       <button class="signout-btn" id="signout-btn">Sign out</button>
@@ -605,7 +612,7 @@ function bcH(crumbs){
 // ── Views ─────────────────────────────────────────────────────────
 
 function renderUploadPage(){
-  const yr=S.yr||new Date().getFullYear();
+  const yr=PENDING.year||S.yr||new Date().getFullYear();
   const lm=getLM(yr,null);
   const dists=getDistributors();
   const cells=MO.map(function(m,i){
@@ -659,8 +666,19 @@ function renderUploadPage(){
     +'style="flex:1;min-width:180px;padding:8px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'
     +quickPick
     +'</div>'
-    +'<div class="slbl">Step 2 — Choose file</div>'
-    +'<p style="font-size:12px;color:var(--t2);margin-bottom:.75rem">Name your file like <code>02-2025_Hackney.xlsx</code> so the month is detected automatically.</p>'
+    +'<div class="slbl">Step 2 — Select month &amp; year</div>'
+    +'<div style="display:flex;gap:8px;align-items:center;margin-bottom:.875rem;flex-wrap:wrap">'
+    +'<select id="upload-month" style="padding:7px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'
+    +['January','February','March','April','May','June','July','August','September','October','November','December'].map(function(m,i){
+      var sel=(PENDING.month!==undefined&&PENDING.month!==null)?PENDING.month:new Date().getMonth();
+      return'<option value="'+i+'"'+(i===sel?' selected':'')+'>'+m+'</option>';
+    }).join('')
+    +'</select>'
+    +'<select id="upload-year" style="padding:7px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'
+    +[2024,2025,2026,2027].map(function(y){return'<option value="'+y+'"'+(y===(PENDING.year||2026)?' selected':'')+'>'+y+'</option>';}).join('')
+    +'</select>'
+    +'</div>'
+    +'<div class="slbl" style="margin-top:.5rem">Step 3 — Choose file</div>'
     +'<button class="choose-btn" onclick="document.getElementById(&quot;fu-hidden&quot;).click()" type="button">Choose File</button>'
     +'<input type="file" id="fu-hidden" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="[...this.files].forEach(handleFile);this.value=String()">'
     +'<div id="map-zone" style="margin-top:1rem">'+(PENDING.file?renderMapper():'')+' </div>'
@@ -1205,8 +1223,20 @@ function doImport(){
   fields.forEach(f=>{const el=document.getElementById('map-'+f);if(el&&el.value!=='')colMap[f]=parseInt(el.value);});
   if(colMap.custName===undefined||colMap.itemno===undefined||colMap.qty===undefined){
     toast('Customer Name, Item #, and Cases/Qty are required','err');return;}
-  const {mo,yr}=detectMonth(fname);
-  if(mo===null||yr===null){toast('Could not detect month from filename — rename to: 01-2026_filename.xlsx','err');return;}
+  // Use manually selected month/year, fall back to filename detection
+  const umEl=document.getElementById('upload-month');
+  const uyEl=document.getElementById('upload-year');
+  const manualMo=umEl?parseInt(umEl.value):PENDING.month;
+  const manualYr=uyEl?parseInt(uyEl.value):PENDING.year;
+  let mo,yr;
+  if(manualMo!==null&&manualMo!==undefined&&!isNaN(manualMo)&&manualYr){
+    mo=manualMo;yr=manualYr;
+  } else {
+    const detected=detectMonth(fname);mo=detected.mo;yr=detected.yr;
+  }
+  if(mo===null||yr===null){toast('Could not detect month — please select month and year above','err');return;}
+  // Save selections for next upload
+  PENDING.month=mo;PENDING.year=yr;
   const rows=[];
   rawRows.slice(hdrIdx+1).forEach(row=>{
     if(!row[colMap.custName])return;
@@ -1378,6 +1408,8 @@ function bindAll(){
   // Dist name input
   const dni=document.getElementById('dist-name-input');if(dni)dni.addEventListener('input',()=>{PENDING.dist=dni.value.trim();S.pendingDist=dni.value.trim();});
   const dqp=document.getElementById('dist-quick-pick');if(dqp)dqp.addEventListener('change',()=>{if(dqp.value){PENDING.dist=dqp.value;S.pendingDist=dqp.value;const dni2=document.getElementById('dist-name-input');if(dni2)dni2.value=dqp.value;}});
+  const umo=document.getElementById('upload-month');if(umo)umo.addEventListener('change',()=>{PENDING.month=parseInt(umo.value);});
+  const uyr=document.getElementById('upload-year');if(uyr)uyr.addEventListener('change',()=>{PENDING.year=parseInt(uyr.value);});
   // File upload
   const dz=document.getElementById('dz');
   if(dz){
