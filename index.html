@@ -295,21 +295,73 @@ async function delAll(){
 }
 
 // ── Server sync ───────────────────────────────────────────────────
+// ── Supabase direct (bypasses Netlify timeout for large row fetches) ──
+const SB_URL='https://cyctfzivrnapbqfbhfsn.supabase.co';
+const SB_KEY='sb_publishable_JIcWtyanxx7dN7dAv5g-cQ_IzmGhAMP';
+
+async function sbDirect(path){
+  const res=await fetch(SB_URL+'/rest/v1/'+path,{
+    headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':'application/json'}
+  });
+  if(!res.ok)throw new Error('SB '+res.status);
+  return res.json();
+}
+
+async function sbAllRows(path){
+  const PAGE=5000;let all=[],from=0;
+  while(true){
+    const to=from+PAGE-1;
+    const res=await fetch(SB_URL+'/rest/v1/'+path,{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,
+        'Content-Type':'application/json','Range-Unit':'items','Range':from+'-'+to}
+    });
+    const page=await res.json();
+    if(!page||!page.length)break;
+    all=all.concat(page);
+    if(res.status===200)break;
+    from+=PAGE;
+  }
+  return all;
+}
+
 async function loadFromServer(){
   try{
-    const r=await fetch('/api/data',{headers:authHeaders(),signal:AbortSignal.timeout(30000)});
+    // Auth check + pricing via Netlify function
+    const r=await fetch('/api/data',{headers:authHeaders(),signal:AbortSignal.timeout(10000)});
     if(r.status===401){clearAuth();renderLogin('Session expired');return;}
-    if(r.ok){
-      const d=await r.json();
-      if(d.uploads){
-        // Server is source of truth — always use server data
-        DB.uploads=d.uploads.map(u=>({...u,distributor:u.distributor||'Hackney',rows:u.rows||[]}));
-        DB.log=d.log||[];
-      }
-      if(d.role&&!AUTH.role)AUTH.role=d.role;  // only set role if not already set
-      if(d.pricing){Object.assign(PRICES,d.pricing);savePrices();}
-    }
-  }catch(e){console.warn('Server sync:',e.message);}
+    const d=await r.json();
+    if(d.role&&!AUTH.role)AUTH.role=d.role;
+    if(d.pricing){Object.assign(PRICES,d.pricing);savePrices();}
+
+    // Fetch uploads metadata directly from Supabase
+    const uploads=await sbDirect('uploads?select=*&order=month_key.asc');
+    if(!uploads||!uploads.length)return;
+
+    // Fetch ALL rows directly from Supabase — no Netlify timeout issues
+    const allRows=await sbAllRows(
+      'velocity_rows?select=upload_id,whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales&order=id.asc'
+    );
+    console.log('Supabase: '+allRows.length+' rows loaded');
+
+    // Group by upload_id
+    const byUpload={};
+    allRows.forEach(r=>{
+      if(!byUpload[r.upload_id])byUpload[r.upload_id]=[];
+      byUpload[r.upload_id].push({
+        whs:r.whs,custName:r.cust_name,groupName:r.group_name,
+        custNo:r.cust_no,city:r.city,st:r.st,vendor:r.vendor,
+        itemno:r.itemno,description:r.description,pack:r.pack,
+        size:r.size,qty:+r.qty,sales:+r.sales
+      });
+    });
+
+    DB.uploads=uploads.map(u=>({
+      id:u.id,distributor:u.distributor||'Hackney',
+      monthKey:u.month_key,month:u.month,year:u.year,
+      uploadedAt:u.uploaded_at,rows:byUpload[u.id]||[]
+    }));
+    DB.log=d.log||[];
+  }catch(e){console.warn('loadFromServer:',e.message);}
 }
 
 
