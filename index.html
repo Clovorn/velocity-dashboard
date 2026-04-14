@@ -510,10 +510,10 @@ function render(){
   if(!S.yr||!ys.includes(+S.yr))S.yr=ys.length?+ys[ys.length-1]:null;
   if(S.vm&&!getLM(S.yr||0,S.activeDist).find(m=>m.k===S.vm))S.vm=null;
   const root=document.getElementById('root');
-  if(!S.yr){root.innerHTML=renderEmpty();if(S.modal&&AUTH.role==='admin')root.insertAdjacentHTML('beforeend',renderModal());bindAll();return;}
-  const views={combined:renderCombined,pricing:renderPricing,overview:renderOverview,wh:renderWH,cust:renderCust,cat:renderCat,skuAccts:renderSKUAccts};
+  if(!S.yr&&S.view!=='upload'){root.innerHTML=renderEmpty();bindAll();return;}
+  const views={combined:renderCombined,pricing:renderPricing,overview:renderOverview,wh:renderWH,cust:renderCust,cat:renderCat,skuAccts:renderSKUAccts,upload:renderUploadPage};
   root.innerHTML=(views[S.view]||renderOverview)();
-  if(S.modal&&AUTH.role==='admin')root.insertAdjacentHTML('beforeend',renderModal());
+  // modal handled in views
   bindAll();renderCharts();
 }
 
@@ -593,6 +593,51 @@ function bcH(crumbs){
 }
 
 // ── Views ─────────────────────────────────────────────────────────
+
+function renderUploadPage(){
+  const yr=S.yr||new Date().getFullYear();
+  const lm=getLM(yr,null);
+  const dists=getDistributors();
+  const cells=MO.map((m,i)=>{const k=yr+'-'+String(i+1).padStart(2,'0');return{k,m,loaded:lm.find(x=>x.k===k)||null};});
+  const logs=(DB.log||[]).slice(-6).reverse();
+  return topBarH()+
+  '<div style="max-width:680px;margin:0 auto">'+
+  '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem">'+
+  '<button class="bbtn" id="upload-back">← Back to Dashboard</button>'+
+  '<div style="font-size:18px;font-weight:700;color:var(--t1)">Upload Velocity Report</div>'+
+  '</div>'+
+  '<div class="card">'+
+  '<div class="slbl" style="margin-top:0">Step 1 — Distributor name</div>'+
+  '<div class="dist-input-row">'+
+  '<label>Distributor:</label>'+
+  '<input type="text" id="dist-name-input" placeholder="e.g. Hackney, RNDC, Southern Glazers..." '+
+  'value="'+(PENDING.dist||'')+'" '+
+  'oninput="PENDING.dist=this.value.trim();S.pendingDist=this.value.trim()" '+
+  'style="flex:1;padding:8px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'+
+  (dists.length?'<select id="dist-quick-pick" style="font-size:13px"><option value="">— or pick existing —</option>'+dists.map(d=>'<option value="'+d+'">'+d+'</option>').join('')+'</select>':'')+ 
+  '</div>'+
+  '<div class="slbl">Step 2 — Choose file</div>'+
+  '<p style="font-size:12px;color:var(--t2);margin-bottom:.75rem">Name your file like <code>02-2025_Hackney.xlsx</code> so the month is detected automatically.</p>'+
+  '<button class="choose-btn" onclick="document.getElementById('fu-hidden').click()" type="button" style="margin-bottom:.5rem">Choose File</button>'+
+  '<input type="file" id="fu-hidden" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="[...this.files].forEach(handleFile);this.value=''">'+
+  '<div id="map-zone" style="margin-top:1rem">'+(PENDING.file?renderMapper():'')+
+  '</div></div>'+
+  '<div class="card">'+
+  '<div class="ctitle" style="margin-bottom:.75rem">Months Loaded — '+yr+'</div>'+
+  '<div class="mgrid">'+
+  cells.map(c=>'<div class="mcell '+(c.loaded?'loaded':'missing')+'">'+
+    (c.loaded?'<button class="mcdel" data-del="'+c.k+'">×</button>':'')+
+    '<div class="mm">'+c.m+' '+yr+'</div>'+
+    (c.loaded?'<div class="ms">'+fmtC(c.loaded.cases)+' cases</div>':'<div class="ms" style="color:var(--t3)">not loaded</div>')+
+    '</div>').join('')+
+  '</div></div>'+
+  (logs.length?'<div class="card"><div class="ctitle" style="margin-bottom:.75rem">Recent Uploads</div>'+
+  logs.map(l=>'<div class="lrow"><span style="font-size:14px">'+(l.ok?'✓':'✗')+'</span><div><div>'+l.msg+'</div><div style="font-size:10px;color:var(--t3)">'+l.at+'</div></div></div>').join('')+
+  '</div>':'')+
+  (AUTH.role==='admin'?'<div style="padding:.5rem 0"><button id="clear-all-btn" style="font-size:12px;color:var(--redt);border:0.5px solid var(--redt);border-radius:var(--r);padding:4px 10px;cursor:pointer;background:none">Clear All Data</button></div>':'')+
+  '</div>';
+}
+
 function renderCombined(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dists=getDistributors();
   const allCur=filt(getRows(S.yr,null)),allPri=prYr?filt(getRows(prYr,null)):[];
@@ -1020,14 +1065,14 @@ function renderMapper(){
 function renderEmpty(){
   return`<div style="background:#1a1a18;border-radius:var(--rl);padding:.75rem 1rem;margin-bottom:.875rem;display:flex;align-items:center;justify-content:space-between">
     <img src="data:image/png;base64,${LOGO_B64}" alt="Ronnoco" style="height:38px;width:auto;display:block;mix-blend-mode:screen">
-    <button class="btn btn-b" id="open-modal" style="border-color:#7ab0f0;color:#7ab0f0">+ Upload First Report</button>
+    <button class="btn btn-b" onclick="S.view='upload';render()" style="border-color:#7ab0f0;color:#7ab0f0">+ Upload First Report</button>
   </div>
   ${S.modal?renderModal():''}
   <div class="empty">
     <div style="font-size:52px;margin-bottom:16px">📊</div>
     <h2>Ready for your velocity data</h2>
     <p>Upload velocity reports from any distributor. Name files like <code>01-2026_Hackney.xlsx</code> — month and year are read from the filename automatically.</p>
-    <button class="btn btn-g" style="margin-top:1.5rem;padding:9px 22px;font-size:14px" id="open-modal2">Open Upload Manager</button>
+    <button class="btn btn-g" style="margin-top:1.5rem;padding:9px 22px;font-size:14px" onclick="S.view='upload';render()">Open Upload Manager</button>
   </div>`;
 }
 
@@ -1100,7 +1145,7 @@ function handleFile(file){
         // Scroll mapper into view
         mapZone.scrollIntoView({behavior:'smooth',block:'start'});
       } else {
-        S.modal=true;render();
+        S.view='upload';S.modal=false;render();
       }
     }catch(e){
       toast('Error reading '+file.name+': '+e.message,'err');
@@ -1143,12 +1188,13 @@ function doImport(){
   if(ei>=0)DB.uploads[ei]=rec;else DB.uploads.push(rec);
   DB.log.push({msg:`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows${ei>=0?' (replaced)':''}`,ok:true,at:new Date().toLocaleString()});
   S.activeDist=distName;
-  S.modal=true;
+  S.view='upload';
   const ys=getYears();S.yr=+ys[ys.length-1];
   PENDING.file=null;PENDING.dist='';
-  toast(`Uploading ${fmtC(rows.length)} rows...`);
+  toast('Uploading '+fmtC(rows.length)+' rows...');
+  render();
   saveRec(rec).then(()=>{
-    toast(`${distName} · ${MO[mo]} ${yr} — ${fmtC(rows.length)} rows ✓ Upload another file below`);
+    toast(distName+' · '+MO[mo]+' '+yr+' — '+fmtC(rows.length)+' rows saved ✓');
     render();
   }).catch(e=>toast('Upload error: '+(e.message||e),'err'));
 }
@@ -1264,9 +1310,8 @@ function bindAll(){
   // Export
   const eb=document.getElementById('exp-btn');if(eb)eb.addEventListener('click',doExport);
   // Modal
-  ['open-modal','open-modal2'].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener('click',()=>{S.modal=true;render();});});
-  const mc=document.getElementById('modal-close');if(mc)mc.addEventListener('click',()=>{S.modal=false;PENDING.file=null;PENDING.dist='';render();});
-  const mbg=document.getElementById('modal-bg');if(mbg)mbg.addEventListener('click',e=>{if(e.target===mbg){S.modal=false;PENDING.file=null;PENDING.dist='';render();}});
+  ['open-modal','open-modal2'].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener('click',()=>{S.view='upload';render();});});
+  const ub=document.getElementById('upload-back');if(ub)ub.addEventListener('click',()=>{S.view=DB.uploads.length?'overview':'combined';PENDING.file=null;PENDING.dist='';render();});
   // Sign out
   // Search
   const searchInp=document.getElementById('search-input');
@@ -1289,14 +1334,7 @@ function bindAll(){
     });
   }
   if(searchClear)searchClear.addEventListener('click',closeSearch);
-  // Close search when clicking outside
-  document.addEventListener('click',e=>{
-    const sw=document.querySelector('.search-wrap');
-    if(sw&&!sw.contains(e.target)){
-      const panel=document.getElementById('search-results-panel');
-      if(panel)panel.innerHTML='';
-    }
-  },{capture:false,once:false});
+  // Search closes on Escape key only
   // Bind any existing search results
   bindSearchResults();
 
