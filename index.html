@@ -598,45 +598,72 @@ function renderUploadPage(){
   const yr=S.yr||new Date().getFullYear();
   const lm=getLM(yr,null);
   const dists=getDistributors();
-  const cells=MO.map((m,i)=>{const k=yr+'-'+String(i+1).padStart(2,'0');return{k,m,loaded:lm.find(x=>x.k===k)||null};});
+  const cells=MO.map(function(m,i){
+    const k=yr+'-'+String(i+1).padStart(2,'0');
+    return{k:k,m:m,loaded:lm.find(function(x){return x.k===k;})||null};
+  });
   const logs=(DB.log||[]).slice(-6).reverse();
-  return topBarH()+
-  '<div style="max-width:680px;margin:0 auto">'+
-  '<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem">'+
-  '<button class="bbtn" id="upload-back">← Back to Dashboard</button>'+
-  '<div style="font-size:18px;font-weight:700;color:var(--t1)">Upload Velocity Report</div>'+
-  '</div>'+
-  '<div class="card">'+
-  '<div class="slbl" style="margin-top:0">Step 1 — Distributor name</div>'+
-  '<div class="dist-input-row">'+
-  '<label>Distributor:</label>'+
-  '<input type="text" id="dist-name-input" placeholder="e.g. Hackney, RNDC, Southern Glazers..." '+
-  'value="'+(PENDING.dist||'')+'" '+
-  'oninput="PENDING.dist=this.value.trim();S.pendingDist=this.value.trim()" '+
-  'style="flex:1;padding:8px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'+
-  (dists.length?'<select id="dist-quick-pick" style="font-size:13px"><option value="">— or pick existing —</option>'+dists.map(d=>'<option value="'+d+'">'+d+'</option>').join('')+'</select>':'')+ 
-  '</div>'+
-  '<div class="slbl">Step 2 — Choose file</div>'+
-  '<p style="font-size:12px;color:var(--t2);margin-bottom:.75rem">Name your file like <code>02-2025_Hackney.xlsx</code> so the month is detected automatically.</p>'+
-  '<button class="choose-btn" onclick="document.getElementById('fu-hidden').click()" type="button" style="margin-bottom:.5rem">Choose File</button>'+
-  '<input type="file" id="fu-hidden" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="[...this.files].forEach(handleFile);this.value=''">'+
-  '<div id="map-zone" style="margin-top:1rem">'+(PENDING.file?renderMapper():'')+
-  '</div></div>'+
-  '<div class="card">'+
-  '<div class="ctitle" style="margin-bottom:.75rem">Months Loaded — '+yr+'</div>'+
-  '<div class="mgrid">'+
-  cells.map(c=>'<div class="mcell '+(c.loaded?'loaded':'missing')+'">'+
-    (c.loaded?'<button class="mcdel" data-del="'+c.k+'">×</button>':'')+
-    '<div class="mm">'+c.m+' '+yr+'</div>'+
-    (c.loaded?'<div class="ms">'+fmtC(c.loaded.cases)+' cases</div>':'<div class="ms" style="color:var(--t3)">not loaded</div>')+
-    '</div>').join('')+
-  '</div></div>'+
-  (logs.length?'<div class="card"><div class="ctitle" style="margin-bottom:.75rem">Recent Uploads</div>'+
-  logs.map(l=>'<div class="lrow"><span style="font-size:14px">'+(l.ok?'✓':'✗')+'</span><div><div>'+l.msg+'</div><div style="font-size:10px;color:var(--t3)">'+l.at+'</div></div></div>').join('')+
-  '</div>':'')+
-  (AUTH.role==='admin'?'<div style="padding:.5rem 0"><button id="clear-all-btn" style="font-size:12px;color:var(--redt);border:0.5px solid var(--redt);border-radius:var(--r);padding:4px 10px;cursor:pointer;background:none">Clear All Data</button></div>':'')+
-  '</div>';
+
+  let quickPick='';
+  if(dists.length){
+    quickPick='<select id="dist-quick-pick" style="font-size:13px;padding:6px 10px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'
+      +'<option value="">— or pick existing —</option>'
+      +dists.map(function(d){return'<option value="'+d+'">'+d+'</option>';}).join('')
+      +'</select>';
+  }
+
+  let monthGrid=cells.map(function(c){
+    return'<div class="mcell '+(c.loaded?'loaded':'missing')+'">'
+      +(c.loaded?'<button class="mcdel" data-del="'+c.k+'">×</button>':'')
+      +'<div class="mm">'+c.m+' '+yr+'</div>'
+      +(c.loaded?'<div class="ms">'+fmtC(c.loaded.cases)+' cases</div>':'<div class="ms" style="color:var(--t3)">not loaded</div>')
+      +'</div>';
+  }).join('');
+
+  let logHtml='';
+  if(logs.length){
+    logHtml='<div class="card"><div class="ctitle" style="margin-bottom:.75rem">Recent Uploads</div>'
+      +logs.map(function(l){return'<div class="lrow"><span style="font-size:14px">'+(l.ok?'✓':'✗')+'</span>'
+        +'<div><div>'+l.msg+'</div><div style="font-size:10px;color:var(--t3)">'+l.at+'</div></div></div>';}).join('')
+      +'</div>';
+  }
+
+  let clearBtn='';
+  if(AUTH.role==='admin'){
+    clearBtn='<div style="padding:.5rem 0"><button id="clear-all-btn" style="font-size:12px;color:var(--redt);border:0.5px solid var(--redt);border-radius:var(--r);padding:4px 10px;cursor:pointer;background:none">Clear All Data</button></div>';
+  }
+
+  return topBarH()
+    +'<div style="max-width:680px;margin:0 auto">'
+    +'<div style="display:flex;align-items:center;gap:12px;margin-bottom:1.25rem">'
+    +'<button class="bbtn" id="upload-back">← Back to Dashboard</button>'
+    +'<div style="font-size:18px;font-weight:700;color:var(--t1)">Upload Velocity Report</div>'
+    +'</div>'
+    +'<div class="card">'
+    +'<div class="slbl" style="margin-top:0">Step 1 — Distributor name</div>'
+    +'<div class="dist-input-row">'
+    +'<label style="font-size:12px;color:var(--t2);font-weight:600">Distributor:</label>'
+    +'<input type="text" id="dist-name-input" placeholder="e.g. Hackney, RNDC..." '
+    +'value="'+(PENDING.dist||'')+'" '
+    +'oninput="PENDING.dist=this.value.trim();S.pendingDist=this.value.trim()" '
+    +'style="flex:1;min-width:180px;padding:8px 12px;font-size:14px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'
+    +quickPick
+    +'</div>'
+    +'<div class="slbl">Step 2 — Choose file</div>'
+    +'<p style="font-size:12px;color:var(--t2);margin-bottom:.75rem">Name your file like <code>02-2025_Hackney.xlsx</code> so the month is detected automatically.</p>'
+    +'<button class="choose-btn" onclick="document.getElementById('fu-hidden').click()" type="button">Choose File</button>'
+    +'<input type="file" id="fu-hidden" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="[...this.files].forEach(handleFile);this.value=''">'
+    +'<div id="map-zone" style="margin-top:1rem">'+(PENDING.file?renderMapper():'')+' </div>'
+    +'</div>'
+    +'<div class="card">'
+    +'<div class="ctitle" style="margin-bottom:.75rem">Months Loaded — '+yr+'</div>'
+    +'<div class="mgrid">'+monthGrid+'</div>'
+    +'</div>'
+    +logHtml
+    +clearBtn
+    +'</div>';
 }
+
 
 function renderCombined(){
   const ys=getYears(),prYr=ys[ys.indexOf(+S.yr)-1],dists=getDistributors();
