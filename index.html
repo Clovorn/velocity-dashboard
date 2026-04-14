@@ -325,22 +325,25 @@ async function sbAllRows(path){
 
 async function loadFromServer(){
   try{
+    toast('Loading data...');
     // Auth check + pricing via Netlify function
     const r=await fetch('/api/data',{headers:authHeaders(),signal:AbortSignal.timeout(10000)});
     if(r.status===401){clearAuth();renderLogin('Session expired');return;}
     const d=await r.json();
     if(d.role&&!AUTH.role)AUTH.role=d.role;
     if(d.pricing){Object.assign(PRICES,d.pricing);savePrices();}
+    toast('Fetching rows from database...');
 
     // Fetch uploads metadata directly from Supabase
     const uploads=await sbDirect('uploads?select=*&order=month_key.asc');
-    if(!uploads||!uploads.length)return;
+    if(!uploads||!uploads.length){toast('No uploads found in database','err');return;}
+    toast('Found '+uploads.length+' months — loading rows...');
 
-    // Fetch ALL rows directly from Supabase — no Netlify timeout issues
+    // Fetch ALL rows directly from Supabase
     const allRows=await sbAllRows(
       'velocity_rows?select=upload_id,whs,cust_name,group_name,cust_no,city,st,vendor,itemno,description,pack,size,qty,sales&order=id.asc'
     );
-    console.log('Supabase: '+allRows.length+' rows loaded');
+    toast('Loaded '+allRows.length+' rows from database');
 
     // Group by upload_id
     const byUpload={};
@@ -360,7 +363,14 @@ async function loadFromServer(){
       uploadedAt:u.uploaded_at,rows:byUpload[u.id]||[]
     }));
     DB.log=d.log||[];
-  }catch(e){console.warn('loadFromServer:',e.message);}
+    
+    const totalRows=DB.uploads.reduce((s,u)=>s+u.rows.length,0);
+    const totalSales=DB.uploads.reduce((s,u)=>s+u.rows.reduce((ss,r)=>ss+(+r.sales||0),0),0);
+    toast('Ready: '+totalRows+' rows, $'+Math.round(totalSales).toLocaleString());
+  }catch(e){
+    toast('Load error: '+e.message,'err');
+    console.error('loadFromServer error:',e);
+  }
 }
 
 
