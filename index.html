@@ -241,6 +241,7 @@ function distColor(name){const i=getDistributors().indexOf(name);return DIST_COL
 const sa=a=>a.reduce((s,v)=>s+(+v||0),0);
 function fmtM(n){if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';if(n>=1e3)return'$'+(n/1e3).toFixed(0)+'K';return'$'+n.toFixed(2);}
 function fmtC(n){return Math.round(n).toLocaleString();}
+function normDist(s){if(!s)return s;return s.trim().split(' ').map(function(w){return w?w.charAt(0).toUpperCase()+w.slice(1).toLowerCase():'';}).join(' ');}
 function yp(c,p){return p>0?Math.round((c-p)/p*100):null;}
 function pill(v){if(v===null)return'<span class="pill pn">—</span>';return`<span class="pill ${v>0?'pu':v<0?'pd':'pn'}">${v>0?'+':''}${v}%</span>`;}
 function moV(rows,mo,field){return sa(rows.filter(r=>r._mo===mo).map(r=>+r[field]||0));}
@@ -266,6 +267,16 @@ function th(label,col){
 function getRonnCost(dist,itemno,revPerCase){
   const p=PRICES[dist]?.[String(itemno)];if(!p||!p.sellPrice)return null;
   let cost=+p.sellPrice||0;if(p.feeFlat)cost+=+p.feeFlat;if(p.feePct)cost+=revPerCase*(+p.feePct/100);return cost;
+}
+function getRonnocoGP(dist,itemno){
+  const p=PRICES[dist]?.[String(itemno)];
+  if(!p||!p.sellPrice||!p.ronnocoCost)return null;
+  return(+p.sellPrice||0)-(+p.ronnocoCost||0);
+}
+function getRonnocoGPPct(dist,itemno){
+  const p=PRICES[dist]?.[String(itemno)];
+  if(!p||!p.sellPrice||!p.ronnocoCost||+p.sellPrice===0)return null;
+  return((+p.sellPrice||0)-(+p.ronnocoCost||0))/(+p.sellPrice)*100;
 }
 function getGP(dist,itemno,revPerCase){const cost=getRonnCost(dist,itemno,revPerCase);return(cost===null||revPerCase===0)?null:revPerCase-cost;}
 function gpClass(v){return v===null?'gp-neu':v>0?'gp-pos':'gp-neg';}
@@ -361,7 +372,7 @@ async function loadFromServer(){
     });
 
     DB.uploads=uploads.map(u=>({
-      id:u.id,distributor:u.distributor||'Hackney',
+      id:u.id,distributor:normDist(u.distributor||'Hackney'),
       monthKey:u.month_key,month:u.month,year:u.year,
       uploadedAt:u.uploaded_at,rows:byUpload[u.id]||[]
     }));
@@ -961,14 +972,27 @@ function renderPricing(){
   `<div class="chdr" style="margin-bottom:.875rem"><div><div class="ctitle">💲 Pricing & Profitability — ${dist}</div>
     <div class="csub">Upload Ronnoco's sell price and distributor fees per SKU to calculate gross profit</div></div></div>
   <div class="naming-tip"><strong>📋 Distributor Naming Tips:</strong> Use consistent simple names — e.g. <strong>Hackney</strong>, <strong>RNDC</strong>, <strong>Southern Glazers</strong>.
-    Avoid special characters or trailing spaces. Names are case-sensitive — "Hackney" and "hackney" are treated as different distributors.</div>
-  ${gp.hasPricing?`<div class="mets">
-    <div class="gp-metric met"><div class="met-l">Total GP $</div><div class="met-v">${gp.dollar>=0?'+':''}$${Math.abs(gp.dollar).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',')}</div><div class="met-s">vs ${fmtM(totR)} revenue</div></div>
-    <div class="gp-metric met"><div class="met-l">GP %</div><div class="met-v">${gp.pct!==null?gp.pct.toFixed(1)+'%':'—'}</div><div class="met-s">gross margin</div></div>
+    Avoid special characters or trailing spaces. Names are automatically normalized — "HACKNEY", "hackney", and "Hackney" all become "Hackney".</div>
+  ${(()=>{
+    // Ronnoco GP summary
+    let ronTotalGP=0,ronCases=0;
+    items.forEach(item=>{
+      const p=distPrices[item.itemno]||{};
+      const sell=+p.sellPrice||0,rc=+p.ronnocoCost||0;
+      if(sell>0&&rc>0){ronTotalGP+=(sell-rc)*item.cases;ronCases+=item.cases;}
+    });
+    const hasRonGP=ronCases>0;
+    return gp.hasPricing||hasRonGP?`<div class="mets">
+    <div style="width:100%;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--greent);padding:4px 0 2px;border-bottom:2px solid var(--greent);margin-bottom:6px">🏢 Ronnoco Metrics</div>
+    <div class="gp-metric met"><div class="met-l">Ronnoco Total GP $</div><div class="met-v">${hasRonGP?(ronTotalGP>=0?'+':'')+'$'+Math.abs(ronTotalGP).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,','):'—'}</div><div class="met-s">HTH sells minus Ronnoco cost</div></div>
+    <div class="gp-metric met"><div class="met-l">Ronnoco GP %</div><div class="met-v">${hasRonGP&&ronTotalGP!==null?(ronTotalGP/items.reduce((s,i)=>{const p=distPrices[i.itemno]||{};return s+(+p.sellPrice||0)*i.cases;},0)*100).toFixed(1)+'%':'—'}</div><div class="met-s">of HTH sell price</div></div>
+    <div style="width:100%;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--bluet);padding:4px 0 2px;border-bottom:2px solid var(--bluet);margin:6px 0 6px">🚚 Distributor Metrics</div>
+    <div class="met" style="background:var(--bluebg)"><div class="met-l" style="color:var(--bluet)">Dist Total GP $</div><div class="met-v" style="color:var(--bluet)">${gp.hasPricing&&gp.dollar!==null?(gp.dollar>=0?'+':'')+'$'+Math.abs(gp.dollar).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,','):'—'}</div><div class="met-s">vs ${fmtM(totR)} dist revenue</div></div>
+    <div class="met" style="background:var(--bluebg)"><div class="met-l" style="color:var(--bluet)">Dist GP %</div><div class="met-v" style="color:var(--bluet)">${gp.pct!==null?gp.pct.toFixed(1)+'%':'—'}</div></div>
     <div class="met"><div class="met-l">SKUs Priced</div><div class="met-v">${priceCount}</div><div class="met-s">of ${items.length} active</div></div>
-    <div class="met"><div class="met-l">Cases</div><div class="met-v">${fmtC(totC)}</div></div>
-    <div class="met"><div class="met-l">Revenue</div><div class="met-v">${fmtM(totR)}</div></div>
-  </div>`:''}
+    <div class="met"><div class="met-l">Dist Revenue</div><div class="met-v">${fmtM(totR)}</div></div>
+  </div>`:'';
+  })()}
   <div class="card"><div class="chdr"><div><div class="ctitle">Upload Pricing Sheet</div>
     <div class="csub">Excel or CSV with columns: Item # · Sell Price · Fee $ (flat per case) · Fee % (% of dist price)</div></div></div>
     <div class="price-upload-zone">
@@ -983,23 +1007,54 @@ function renderPricing(){
       <button class="btn" id="export-pricing-btn" style="font-size:11px">↓ Export Pricing</button>
       <button class="btn" id="clear-pricing-btn" style="font-size:11px;color:var(--redt);border-color:var(--redt)">Clear Prices</button>
     </div></div>
-    <table><thead><tr><th>Item #</th><th>Description</th><th>Cases</th><th>Dist Rev/Case</th>
-      <th>Ronnoco Sell $</th><th>Dist Fee $</th><th>Dist Fee %</th>
-      <th>Cost/Case</th><th>GP $/Case</th><th>GP %</th><th>Total GP $</th>
-    </tr></thead><tbody>
+    <table>
+    <thead>
+      <tr>
+        <th rowspan="2" style="vertical-align:middle">Item #</th>
+        <th rowspan="2" style="vertical-align:middle">Description</th>
+        <th rowspan="2" style="vertical-align:middle">Cases</th>
+        <th colspan="4" style="text-align:center;background:#0a4f32;color:#fff;border-radius:4px 4px 0 0;padding:5px">🏢 RONNOCO METRICS</th>
+        <th colspan="5" style="text-align:center;background:#0c3d7a;color:#fff;border-radius:4px 4px 0 0;padding:5px">🚚 DISTRIBUTOR METRICS</th>
+      </tr>
+      <tr>
+        <th style="background:var(--greenbg);color:var(--greent)" title="What Ronnoco pays to produce/purchase — editable">Ronnoco Cost ✏</th>
+        <th style="background:var(--greenbg);color:var(--greent)" title="What HTH pays Ronnoco — editable">HTH Sells $ ✏</th>
+        <th style="background:var(--greenbg);color:var(--greent)" title="HTH Pays minus Ronnoco Cost">Ronnoco GP $</th>
+        <th style="background:var(--greenbg);color:var(--greent)" title="Ronnoco margin %">Ronnoco GP %</th>
+        <th style="background:var(--bluebg);color:var(--bluet)" title="What Hackney charges the end customer">Dist Rev/Case</th>
+        <th style="background:var(--bluebg);color:var(--bluet)" title="Flat fee per case — editable">Dist Fee $ ✏</th>
+        <th style="background:var(--bluebg);color:var(--bluet)" title="Percentage fee — editable">Dist Fee % ✏</th>
+        <th style="background:var(--bluebg);color:var(--bluet)" title="Dist Rev minus HTH Cost minus fees">Dist GP $/Case</th>
+        <th style="background:var(--bluebg);color:var(--bluet)">Dist GP %</th>
+        <th style="background:var(--bluebg);color:var(--bluet)">Total Dist GP $</th>
+      </tr>
+    </thead><tbody>
     ${items.map(item=>{const p=distPrices[item.itemno]||{};
-      const rpc=item.cases>0?item.rev/item.cases:0,sell=+p.sellPrice||0,ff=+p.feeFlat||0,fp=+p.feePct||0;
-      const tcc=sell+ff+(rpc*fp/100),gpPC4=sell>0?rpc-tcc:null,totalGP3=gpPC4!==null?gpPC4*item.cases:null,gpPct3=rpc>0&&gpPC4!==null?gpPC4/rpc*100:null;
+      const rpc=item.cases>0?item.rev/item.cases:0;
+      const sell=+p.sellPrice||0,ff=+p.feeFlat||0,fp=+p.feePct||0,rc=+p.ronnocoCost||0;
+      const tcc=sell+ff+(rpc*fp/100);
+      const distGPPC=sell>0?rpc-tcc:null;
+      const distGPPct=rpc>0&&distGPPC!==null?distGPPC/rpc*100:null;
+      const totalDistGP=distGPPC!==null?distGPPC*item.cases:null;
+      const ronGP=sell>0&&rc>0?sell-rc:null;
+      const ronGPPct=sell>0&&rc>0?(sell-rc)/sell*100:null;
+      const ronBg='background:rgba(10,79,50,0.05)';
+      const distBg='background:rgba(12,61,122,0.05)';
+      const inputStyle='padding:3px 5px;font-size:12px;border:0.5px solid var(--bdr2);border-radius:4px;background:var(--bg1);color:var(--t1);text-align:right';
       return`<tr>
       <td style="font-size:11px;color:var(--t2)">${item.itemno}</td>
-      <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.desc}">${item.desc}</td>
-      <td style="font-size:12px">${fmtC(item.cases)}</td><td style="font-size:12px">$${rpc.toFixed(2)}</td>
-      <td><input type="number" class="price-input" data-item="${item.itemno}" data-field="sellPrice" value="${sell||''}" placeholder="0.00" step="0.01" min="0" style="width:72px;padding:3px 5px;font-size:12px;border:0.5px solid var(--bdr2);border-radius:4px;background:var(--bg1);color:var(--t1);text-align:right"></td>
-      <td><input type="number" class="price-input" data-item="${item.itemno}" data-field="feeFlat" value="${ff||''}" placeholder="0.00" step="0.01" min="0" style="width:65px;padding:3px 5px;font-size:12px;border:0.5px solid var(--bdr2);border-radius:4px;background:var(--bg1);color:var(--t1);text-align:right"></td>
-      <td><input type="number" class="price-input" data-item="${item.itemno}" data-field="feePct" value="${fp||''}" placeholder="0.0" step="0.1" min="0" max="100" style="width:58px;padding:3px 5px;font-size:12px;border:0.5px solid var(--bdr2);border-radius:4px;background:var(--bg1);color:var(--t1);text-align:right"></td>
-      <td style="font-size:12px">${sell>0?'$'+tcc.toFixed(2):'—'}</td>
-      <td>${fmtGP(gpPC4)}</td><td>${fmtGPPct(gpPct3)}</td>
-      <td>${totalGP3!==null?`<span class="${gpClass(totalGP3)}">${totalGP3>=0?'+':''}$${Math.abs(totalGP3).toFixed(0)}</span>`:'<span class="gp-neu">—</span>'}</td>
+      <td style="font-weight:600;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.desc}">${item.desc}</td>
+      <td style="font-size:12px;text-align:right">${fmtC(item.cases)}</td>
+      <td style="${ronBg}"><input type="number" class="price-input" data-item="${item.itemno}" data-field="ronnocoCost" value="${rc||''}" placeholder="0.00" step="0.01" min="0" style="width:72px;${inputStyle};border-color:var(--greent)"></td>
+      <td style="${ronBg}"><input type="number" class="price-input" data-item="${item.itemno}" data-field="sellPrice" value="${sell||''}" placeholder="0.00" step="0.01" min="0" style="width:72px;${inputStyle};border-color:var(--greent)"></td>
+      <td style="${ronBg};font-size:12px;text-align:right;font-weight:600">${ronGP!==null?fmtGP(ronGP):'<span class="gp-neu">—</span>'}</td>
+      <td style="${ronBg};font-size:12px;text-align:right">${ronGPPct!==null?fmtGPPct(ronGPPct):'<span class="gp-neu">—</span>'}</td>
+      <td style="${distBg};font-size:12px;text-align:right;color:var(--t2)">${rpc>0?'$'+rpc.toFixed(2):'—'}</td>
+      <td style="${distBg}"><input type="number" class="price-input" data-item="${item.itemno}" data-field="feeFlat" value="${ff||''}" placeholder="0.00" step="0.01" min="0" style="width:65px;${inputStyle};border-color:var(--bluet)"></td>
+      <td style="${distBg}"><input type="number" class="price-input" data-item="${item.itemno}" data-field="feePct" value="${fp||''}" placeholder="0.0" step="0.1" min="0" max="100" style="width:58px;${inputStyle};border-color:var(--bluet)"></td>
+      <td style="${distBg};font-size:12px;text-align:right">${fmtGP(distGPPC)}</td>
+      <td style="${distBg};font-size:12px;text-align:right">${fmtGPPct(distGPPct)}</td>
+      <td style="${distBg};font-size:12px;text-align:right;font-weight:600">${totalDistGP!==null?`<span class="${gpClass(totalDistGP)}">${totalDistGP>=0?'+':''}$${Math.abs(totalDistGP).toFixed(0)}</span>`:'<span class="gp-neu">—</span>'}</td>
     </tr>`;}).join('')}
     </tbody></table></div>`;
 }
@@ -1089,12 +1144,21 @@ function renderMapper(){
   if(!PENDING.file)return'';
   const {headers}=PENDING.file;
   const opts='<option value="">— skip —</option>'+headers.map((h,i)=>`<option value="${i}">${h}</option>`).join('');
-  function guess(...terms){const i=headers.findIndex(h=>terms.some(t=>h.toLowerCase().includes(t)));return i>=0?i:'';}
-  const auto={custName:guess('customer name','account name'),whs:guess('whs','warehouse','location'),groupName:guess('group name','group','chain'),
-    custNo:guess('customer #','acct #','cust no'),city:guess('city'),st:guess(' st','state'),
-    vendor:guess('vendor','brand','supplier'),itemno:guess('itemno','item no','item #','sku','upc','item code'),
-    description:guess('description','desc','product name','item name'),qty:guess('qty','quantity','cases','units','sold'),
-    sales:guess('sales $','sales','revenue','amount','net sales'),pack:guess('pack'),size:guess('size')};
+  function guess(...terms){const i=headers.findIndex(h=>h&&terms.some(t=>String(h).toLowerCase().includes(t)));return i>=0?i:'';}
+  const auto={
+    custName:guess('customer name','account name','cust name'),
+    whs:guess('whs','warehouse','location','whse'),
+    groupName:guess('group name','group','chain','group/chain'),
+    custNo:guess('customer number','customer #','acct #','cust no','cust #'),
+    city:guess('city'),
+    st:guess(' st','state',' state'),
+    vendor:guess('vendor','brand','supplier','mfg'),
+    itemno:guess('itemno','item no','item #','sku','upc','item code','item/sku'),
+    description:guess('description','desc','product name','item name','product desc'),
+    qty:guess('qty','quantity','cases','units','sold'),
+    sales:guess('sales $','sales','revenue','amount','net sales','revenue/sales'),
+    pack:guess('pack'),
+    size:guess('size')};
   const fields=[{key:'custName',label:'Customer Name',req:true},{key:'whs',label:'Warehouse'},{key:'groupName',label:'Group/Chain'},
     {key:'custNo',label:'Customer #'},{key:'city',label:'City'},{key:'st',label:'State'},
     {key:'vendor',label:'Vendor/Brand'},{key:'itemno',label:'Item/SKU #',req:true},
@@ -1173,7 +1237,7 @@ function detectMonth(fname){
 
 function handleFile(file){
   const distInput=document.getElementById('dist-name-input');
-  const distName=(distInput?distInput.value:'').trim()||PENDING.dist||'';
+  const distName=normDist((distInput?distInput.value:'').trim()||PENDING.dist||'');
   if(!distName){toast('Please enter a distributor name first','err');if(distInput)distInput.focus();return;}
   PENDING.dist=distName;S.pendingDist=distName;
   toast('Reading file...');
@@ -1185,11 +1249,13 @@ function handleFile(file){
       const ws=wb.Sheets[wb.SheetNames[0]];
       const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:true});
       if(!raw||raw.length<2){toast('File appears empty: '+file.name,'err');return;}
-      let hdrIdx=0;
-      for(let i=0;i<Math.min(5,raw.length);i++){
-        if(raw[i].filter(c=>c!==null&&c!==undefined&&c!=='').length>=4){hdrIdx=i;break;}
+      // Find header row = row with most non-empty cells (handles title rows)
+      let hdrIdx=0,bestCount=0;
+      for(let i=0;i<Math.min(6,raw.length);i++){
+        const count=(raw[i]||[]).filter(c=>c!==null&&c!==undefined&&c!=='').length;
+        if(count>bestCount){bestCount=count;hdrIdx=i;}
       }
-      const headers=raw[hdrIdx].map(h=>String(h||'').trim());
+      const headers=(raw[hdrIdx]||[]).map(h=>String(h==null||h==undefined?'':h).trim());
       PENDING.file={rawRows:raw,fname:file.name,hdrIdx,headers};
       toast('File loaded — map columns below');
       // Inject mapper directly into existing modal

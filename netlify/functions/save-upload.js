@@ -55,6 +55,7 @@ exports.handler = async (event) => {
         distributor,
         itemno,
         description: p.description || "",
+        ronnoco_cost: p.ronnocoCost || 0,
         sell_price: p.sellPrice || 0,
         fee_flat: p.feeFlat || 0,
         fee_pct: p.feePct || 0,
@@ -66,7 +67,9 @@ exports.handler = async (event) => {
     }
 
     // ── Save velocity upload ──────────────────────────────────────
-    const { distributor, monthKey, month, year, rows, uploadedAt } = body;
+    const rawDist = body.distributor || '';
+    const distributor = rawDist.trim().split(' ').map(w=>w?w.charAt(0).toUpperCase()+w.slice(1).toLowerCase():'').join(' ');
+    const { monthKey, month, year, rows, uploadedAt } = body;
     if (!distributor || !monthKey || !rows) {
       return { statusCode: 400, headers, body: JSON.stringify({ error: "distributor, monthKey, rows required" }) };
     }

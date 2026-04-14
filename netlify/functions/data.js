@@ -127,13 +127,14 @@ exports.handler = async (event) => {
 
     // Get log + pricing (small tables, no pagination needed)
     const log = await sbGet("upload_log?select=msg,ok,created_at&order=created_at.desc&limit=50");
-    const pricingRows = await sbGet("pricing?select=distributor,itemno,sell_price,fee_flat,fee_pct,description");
+    const pricingRows = await sbGet("pricing?select=distributor,itemno,ronnoco_cost,sell_price,fee_flat,fee_pct,description");
 
     const pricingMap = {};
     if (Array.isArray(pricingRows)) {
       pricingRows.forEach(p => {
         if (!pricingMap[p.distributor]) pricingMap[p.distributor] = {};
         pricingMap[p.distributor][p.itemno] = {
+          ronnocoCost: +p.ronnoco_cost||0,
           sellPrice: +p.sell_price, feeFlat: +p.fee_flat,
           feePct: +p.fee_pct, description: p.description,
         };
