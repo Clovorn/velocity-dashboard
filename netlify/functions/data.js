@@ -77,6 +77,7 @@ exports.handler = async (event) => {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, X-Auth-Token",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Content-Type": "application/json",
   };
 
