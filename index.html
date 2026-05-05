@@ -250,20 +250,27 @@ function getRows(yr,dist){
 // This ensures YOY comparison is apples-to-apples (same months only)
 function getPriorRows(curYr,prYr,dist){
   if(!prYr)return[];
-  // Get which months exist in current year
-  const curMonths=new Set(
-    DB.uploads.filter(u=>u.year==curYr&&(!dist||u.distributor===dist))
-      .map(u=>u.month)
+  // Get which months are loaded in current year (for this distributor)
+  const curUps=DB.uploads.filter(u=>u.year==curYr&&(!dist||u.distributor===dist));
+  const curMonths=new Set(curUps.map(u=>u.month));
+  // Only include prior year months that match loaded current year months
+  let ups=DB.uploads.filter(u=>
+    u.year==prYr&&
+    (!dist||u.distributor===dist)&&
+    curMonths.has(u.month)
   );
-  // Only get prior year rows for those same months
-  let ups=DB.uploads.filter(u=>u.year==prYr&&(!dist||u.distributor===dist)&&curMonths.has(u.month));
+  // If a specific month is selected via month bar, filter to that month only
   if(S.vm){
-    // If a specific month is selected, filter both years to that month
-    const vm_mo=S.vm?parseInt(S.vm.split('-')[1])-1:null;
-    if(vm_mo!==null)ups=ups.filter(u=>u.month===vm_mo);
+    const vm_mo=parseInt(S.vm.split('-')[1])-1;
+    ups=ups.filter(u=>u.month===vm_mo);
   }
   const rows=[];
   ups.forEach(u=>(u.rows||[]).forEach(r=>rows.push({...r,_mo:u.month,_yr:u.year,_dist:u.distributor})));
+  // Debug: log what months are being compared
+  const prMonths=ups.map(u=>u.month_key);
+  console.log('getPriorRows: curYr='+curYr+' months='+[...curMonths].sort().join(',')
+    +' | prYr='+prYr+' months='+prMonths.join(',')
+    +' | rows='+rows.length);
   return rows;
 }
 function filt(rows){
@@ -576,7 +583,7 @@ function render(){
   if(S.vm&&!getLM(S.yr||0,S.activeDist).find(m=>m.k===S.vm))S.vm=null;
   const root=document.getElementById('root');
   if(!S.yr&&S.view!=='upload'){root.innerHTML=renderEmpty();bindAll();return;}
-  const views={combined:renderCombined,pricing:renderPricing,overview:renderOverview,wh:renderWH,cust:renderCust,cat:renderCat,skuAccts:renderSKUAccts,upload:renderUploadPage};
+  const views={combined:renderCombined,pricing:renderPricing,skuperf:renderSKUPerf,overview:renderOverview,wh:renderWH,cust:renderCust,cat:renderCat,skuAccts:renderSKUAccts,upload:renderUploadPage};
   root.innerHTML=(views[S.view]||renderOverview)();
   // modal handled in views
   bindAll();renderCharts();
@@ -613,6 +620,7 @@ function distTabsH(){
     <button class="dist-tab all-tab${!S.activeDist&&S.view==='combined'?' active':''}" data-dist-tab="combined">All Distributors</button>
     ${dists.map((d,i)=>`<button class="dist-tab${S.activeDist===d&&S.view!=='pricing'?' active':''}" style="${S.activeDist===d&&S.view!=='pricing'?'':'border-left:3px solid '+distColor(d)}" data-dist-tab="${d}">${d}</button>`).join('')}
     ${S.activeDist?`<button class="price-tab${S.view==='pricing'?' active':''}" data-view-pricing="1">💲 Pricing${hasPricing?' ✓':''}</button>`:''}
+    ${S.activeDist?`<button class="price-tab${S.view==='skuperf'?' active':''}" data-view-skuperf="1" style="border-left:3px solid #7c3aed">📦 SKU Performance</button>`:''}
   </div>`;
 }
 function mbH(){
@@ -786,6 +794,130 @@ function dangerConfirm({title, message, confirmWord, onConfirm}){
   cancel.addEventListener('click',()=>div.remove());
   div.addEventListener('click',e=>{if(e.target===div)div.remove();});
   setTimeout(()=>input.focus(),100);
+}
+
+
+// ── SKU Performance View ──────────────────────────────────────────
+function renderSKUPerf(){
+  const dist=S.activeDist;
+  if(!dist)return renderCombined();
+  const ys=getYears();
+  const prYr=ys[ys.indexOf(+S.yr)-1];
+  const distPrices=PRICES[dist]||{};
+
+  // Build SKU data from current year rows
+  const cur=filt(getRows(S.yr,dist));
+  const pri=prYr?filt(getPriorRows(S.yr,prYr,dist)):[];
+
+  // Aggregate by SKU
+  const skuMap={};
+  cur.forEach(r=>{
+    const k=r.itemno;
+    if(!skuMap[k])skuMap[k]={
+      itemno:r.itemno,desc:(r.description||'').trim(),
+      vendor:String(r.vendor||''),pack:r.pack||'',size:(r.size||'').trim(),
+      cases:0,sales:0,accts:new Set(),mo:Array(12).fill(0)
+    };
+    skuMap[k].cases+=+r.qty||0;
+    skuMap[k].sales+=+r.sales||0;
+    skuMap[k].accts.add(r.custName);
+    skuMap[k].mo[r._mo]+=+r.qty||0;
+  });
+
+  // Prior year by SKU
+  const priMap={};
+  pri.forEach(r=>{
+    const k=r.itemno;
+    if(!priMap[k])priMap[k]={cases:0,sales:0};
+    priMap[k].cases+=+r.qty||0;
+    priMap[k].sales+=+r.sales||0;
+  });
+
+  // Build final SKU list with all metrics
+  let skus=Object.values(skuMap).map(s=>{
+    const p=distPrices[s.itemno]||{};
+    const rpc=s.cases>0?s.sales/s.cases:0;
+    const sell=+p.sellPrice||0,rc=+p.ronnocoCost||0,ff=+p.feeFlat||0,fp=+p.feePct||0;
+    const tcc=sell+ff+(rpc*fp/100);
+    const distGP=sell>0?rpc-tcc:null;
+    const ronGP=sell>0&&rc>0?sell-rc:null;
+    const pr=priMap[s.itemno]||{cases:0,sales:0};
+    const yoyC=pr.cases>0?Math.round((s.cases-pr.cases)/pr.cases*100):null;
+    const yoyS=pr.sales>0?Math.round((s.sales-pr.sales)/pr.sales*100):null;
+    return{...s,accts:s.accts.size,rpc,distGP,ronGP,
+      distGPTotal:distGP!==null?distGP*s.cases:null,
+      ronGPTotal:ronGP!==null?ronGP*s.cases:null,
+      prCases:pr.cases,prSales:pr.sales,yoyC,yoyS};
+  });
+
+  // Sort
+  const sortCol=S.sort.col||'cases';
+  const sortDir=S.sort.dir||(-1);
+  skus=sortRows(skus,sortCol,sortDir);
+
+  // Totals
+  const totCases=skus.reduce((s,x)=>s+x.cases,0);
+  const totSales=skus.reduce((s,x)=>s+x.sales,0);
+  const totDistGP=skus.reduce((s,x)=>s+(x.distGPTotal||0),0);
+  const totRonGP=skus.reduce((s,x)=>s+(x.ronGPTotal||0),0);
+  const hasDistGP=skus.some(s=>s.distGP!==null);
+  const hasRonGP=skus.some(s=>s.ronGP!==null);
+  const lm=getLM(S.yr,dist).length||1;
+
+  return topBarH()+distTabsH()+mbH()+
+  '<div class="mets">'+
+    '<div class="met"><div class="met-l">Total SKUs</div><div class="met-v">'+skus.length+'</div><div class="met-s">'+new Set(cur.map(r=>r.vendor)).size+' vendors</div></div>'+
+    '<div class="met"><div class="met-l">Total Cases</div><div class="met-v">'+fmtC(totCases)+'</div></div>'+
+    '<div class="met"><div class="met-l">Total Revenue</div><div class="met-v">'+fmtM(totSales)+'</div></div>'+
+    (hasRonGP?'<div class="gp-metric met"><div class="met-l">Ronnoco GP $</div><div class="met-v">'+(totRonGP>=0?'+':'')+'$'+Math.abs(totRonGP).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',')+'</div><div class="met-s">across all SKUs</div></div>':'')+
+    (hasDistGP?'<div class="met" style="background:var(--bluebg)"><div class="met-l" style="color:var(--bluet)">Dist GP $</div><div class="met-v" style="color:var(--bluet)">'+(totDistGP>=0?'+':'')+'$'+Math.abs(totDistGP).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g,',')+'</div></div>':'')+
+  '</div>'+
+  '<div class="card">'+
+  '<div class="chdr"><div><div class="ctitle">SKU Performance — '+dist+' · '+S.yr+'</div>'+
+  '<div class="csub">'+skus.length+' active SKUs · click any column to sort · click row to see accounts</div></div>'+
+  '<div style="display:flex;gap:6px">'+
+    '<select id="sku-vendor-filter" style="font-size:12px;padding:4px 8px"><option value="">All Vendors</option>'+
+    [...new Set(cur.map(r=>String(r.vendor||'')).filter(Boolean))].sort().map(v=>'<option value="'+v+'">'+v+'</option>').join('')+
+    '</select>'+
+    '<input type="text" id="sku-search" placeholder="Search SKU or description..." style="font-size:12px;padding:4px 8px;width:200px;border:0.5px solid var(--bdr2);border-radius:var(--r);background:var(--bg1);color:var(--t1)">'+
+  '</div></div>'+
+  '<div style="overflow-x:auto">'+
+  '<table id="sku-table"><thead>'+
+  '<tr>'+
+    '<th colspan="5"></th>'+
+    '<th colspan="3" style="text-align:center;background:var(--greenbg);color:var(--greent);font-size:10px">🏢 RONNOCO</th>'+
+    '<th colspan="3" style="text-align:center;background:var(--bluebg);color:var(--bluet);font-size:10px">🚚 DISTRIBUTOR</th>'+
+    '<th colspan="2" style="text-align:center;font-size:10px">📅 YOY vs '+prYr+'</th>'+
+  '</tr>'+
+  '<tr>'+
+    th('Item #','itemno')+th('Description','desc')+th('Vendor','vendor')+th('Pack','pack')+th('Accounts','accts')+
+    '<th style="background:var(--greenbg);color:var(--greent)">'+th('Cases','cases').replace('<th','<span').replace('</th>','</span>')+'</th>'+
+    '<th style="background:var(--greenbg);color:var(--greent)" data-sort="ronGP">Ronnoco GP $/Case</th>'+
+    '<th style="background:var(--greenbg);color:var(--greent)" data-sort="ronGPTotal">Ronnoco GP $</th>'+
+    '<th style="background:var(--bluebg);color:var(--bluet)" data-sort="rpc">Rev/Case</th>'+
+    '<th style="background:var(--bluebg);color:var(--bluet)" data-sort="distGP">Dist GP $/Case</th>'+
+    '<th style="background:var(--bluebg);color:var(--bluet)" data-sort="distGPTotal">Dist GP $</th>'+
+    th('Cases YOY','yoyC')+th('Rev YOY','yoyS')+
+  '</tr>'+
+  '</thead><tbody id="sku-tbody">'+
+  skus.map(function(s){
+    return '<tr class="dr" data-go-sku="'+s.itemno+'">'+
+      '<td style="font-size:11px;color:var(--t2);white-space:nowrap">'+s.itemno+'</td>'+
+      '<td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+s.desc+'">'+s.desc+'</td>'+
+      '<td style="font-size:11px"><span class="bdg vn-b">'+s.vendor+'</span></td>'+
+      '<td style="font-size:11px;color:var(--t2)">'+s.pack+'</td>'+
+      '<td style="font-size:12px;text-align:right">'+s.accts+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(10,79,50,.04);font-weight:600">'+fmtC(s.cases)+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(10,79,50,.04)">'+fmtGP(s.ronGP)+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(10,79,50,.04);font-weight:600">'+(s.ronGPTotal!==null?'<span class="'+gpClass(s.ronGPTotal)+'">'+(s.ronGPTotal>=0?'+':'')+'$'+Math.abs(s.ronGPTotal).toFixed(0)+'</span>':'<span class="gp-neu">—</span>')+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(12,61,122,.04)">$'+s.rpc.toFixed(2)+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(12,61,122,.04)">'+fmtGP(s.distGP)+'</td>'+
+      '<td style="font-size:12px;text-align:right;background:rgba(12,61,122,.04);font-weight:600">'+(s.distGPTotal!==null?'<span class="'+gpClass(s.distGPTotal)+'">'+(s.distGPTotal>=0?'+':'')+'$'+Math.abs(s.distGPTotal).toFixed(0)+'</span>':'<span class="gp-neu">—</span>')+'</td>'+
+      '<td style="text-align:right">'+pill(s.yoyC)+'</td>'+
+      '<td style="text-align:right">'+pill(s.yoyS)+'</td>'+
+    '</tr>';
+  }).join('')+
+  '</tbody></table></div></div>';
 }
 
 function renderCombined(){
@@ -1498,6 +1630,7 @@ function bindAll(){
   }));
   // Pricing tab
   document.querySelectorAll('[data-view-pricing]').forEach(el=>el.addEventListener('click',()=>{S.view='pricing';S.sort={col:null,dir:1};render();}));
+  document.querySelectorAll('[data-view-skuperf]').forEach(el=>el.addEventListener('click',()=>{S.view='skuperf';S.sort={col:null,dir:-1};render();}));
   // Nav
   document.querySelectorAll('[data-nav]').forEach(el=>el.addEventListener('click',()=>{
     const v=el.dataset.nav;if(v==='overview'){S.wh=null;S.cust=null;S.cat=null;S.sku=null;}go(v);
@@ -1529,6 +1662,25 @@ function bindAll(){
   ['open-modal','open-modal2'].forEach(id=>{const b=document.getElementById(id);if(b)b.addEventListener('click',()=>{S.view='upload';render();});});
   const ub=document.getElementById('upload-back');if(ub)ub.addEventListener('click',()=>{S.view=DB.uploads.length?'overview':'combined';PENDING.file=null;PENDING.dist='';render();});
   // Sign out
+  // SKU Performance filters
+  const svf=document.getElementById('sku-vendor-filter');
+  if(svf)svf.addEventListener('change',()=>{
+    const vendor=svf.value;
+    document.querySelectorAll('#sku-tbody tr').forEach(row=>{
+      const vCell=row.querySelector('td:nth-child(3)');
+      if(!vCell)return;
+      row.style.display=(!vendor||vCell.textContent.trim()===vendor)?'':'none';
+    });
+  });
+  const skuSrch=document.getElementById('sku-search');
+  if(skuSrch)skuSrch.addEventListener('input',()=>{
+    const q=skuSrch.value.toLowerCase();
+    document.querySelectorAll('#sku-tbody tr').forEach(row=>{
+      const text=row.textContent.toLowerCase();
+      row.style.display(!q||text.includes(q)?'':'none');
+    });
+  });
+
   // Search
   const searchInp=document.getElementById('search-input');
   const searchClear=document.getElementById('search-clear');
